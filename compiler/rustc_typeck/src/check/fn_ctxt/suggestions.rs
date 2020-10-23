@@ -11,6 +11,7 @@ use rustc_hir::def::{CtorOf, DefKind};
 use rustc_hir::lang_items::LangItem;
 use rustc_hir::{ExprKind, ItemKind, Node};
 use rustc_infer::infer;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, Ty};
 use rustc_span::symbol::kw;
 use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt as _;
@@ -468,7 +469,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let sp = expr.span;
                 // Check for `Future` implementations by constructing a predicate to
                 // prove: `<T as Future>::Output == U`
-                let future_trait = self.tcx.require_lang_item(LangItem::Future, Some(sp));
+                let future_trait =
+                    self.tcx.require_lang_item(LangItem::Future, Some(SpanSource::Span(sp)));
                 let item_def_id = self
                     .tcx
                     .associated_items(future_trait)

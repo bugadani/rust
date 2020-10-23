@@ -22,6 +22,7 @@ use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::intravisit::{walk_generics, Visitor as _};
 use rustc_hir::lang_items::LangItem;
 use rustc_hir::{Constness, GenericArg, GenericArgs};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::{self, InternalSubsts, Subst, SubstsRef};
 use rustc_middle::ty::GenericParamDefKind;
 use rustc_middle::ty::{self, Const, DefIdTree, Ty, TyCtxt, TypeFoldable};
@@ -627,7 +628,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         self_ty: Ty<'tcx>,
         bounds: &mut Bounds<'tcx>,
     ) {
-        let trait_def_id = self.tcx().require_lang_item(lang_item, Some(span));
+        let trait_def_id = self.tcx().require_lang_item(lang_item, Some(SpanSource::Span(span)));
 
         let (substs, assoc_bindings, _) =
             self.create_substs_for_ast_path(span, trait_def_id, &[], args, false, Some(self_ty));
@@ -2058,7 +2059,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                     .unwrap_or_else(|_| tcx.ty_error())
             }
             hir::TyKind::Path(hir::QPath::LangItem(lang_item, span)) => {
-                let def_id = tcx.require_lang_item(lang_item, Some(span));
+                let def_id = tcx.require_lang_item(lang_item, Some(SpanSource::Span(span)));
                 let (substs, _, _) = self.create_substs_for_ast_path(
                     span,
                     def_id,

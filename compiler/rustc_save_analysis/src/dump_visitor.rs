@@ -22,6 +22,7 @@ use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::intravisit::{self, Visitor};
 use rustc_hir_pretty::{bounds_to_string, fn_to_string, generic_params_to_string, ty_to_string};
 use rustc_middle::hir::map::Map;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::span_bug;
 use rustc_middle::ty::{self, DefIdTree, TyCtxt};
 use rustc_session::config::Input;
@@ -707,9 +708,10 @@ impl<'tcx> DumpVisitor<'tcx> {
                     self.lookup_def_id(trait_ref.trait_ref.hir_ref_id),
                     trait_ref.trait_ref.path.segments.last().unwrap().ident.span,
                 ),
-                hir::GenericBound::LangItemTrait(lang_item, span, _, _) => {
-                    (Some(self.tcx.require_lang_item(lang_item, Some(span))), span)
-                }
+                hir::GenericBound::LangItemTrait(lang_item, span, _, _) => (
+                    Some(self.tcx.require_lang_item(lang_item, Some(SpanSource::Span(span)))),
+                    span,
+                ),
                 hir::GenericBound::Outlives(..) => continue,
             };
 

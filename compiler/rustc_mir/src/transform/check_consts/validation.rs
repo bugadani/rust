@@ -4,6 +4,7 @@ use rustc_errors::{struct_span_err, Applicability, Diagnostic};
 use rustc_hir::def_id::DefId;
 use rustc_hir::{self as hir, HirId, LangItem};
 use rustc_infer::infer::TyCtxtInferExt;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
 use rustc_middle::mir::*;
 use rustc_middle::ty::cast::CastTy;
@@ -906,7 +907,7 @@ fn check_return_ty_is_sync(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, hir_id: HirId) 
     tcx.infer_ctxt().enter(|infcx| {
         let cause = traits::ObligationCause::new(body.span, hir_id, traits::SharedStatic);
         let mut fulfillment_cx = traits::FulfillmentContext::new();
-        let sync_def_id = tcx.require_lang_item(LangItem::Sync, Some(body.span));
+        let sync_def_id = tcx.require_lang_item(LangItem::Sync, Some(SpanSource::Span(body.span)));
         fulfillment_cx.register_bound(&infcx, ty::ParamEnv::empty(), ty, sync_def_id, cause);
         if let Err(err) = fulfillment_cx.select_all_or_error(&infcx) {
             infcx.report_fulfillment_errors(&err, None, false);

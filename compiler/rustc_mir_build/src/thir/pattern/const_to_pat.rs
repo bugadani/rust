@@ -1,6 +1,7 @@
 use rustc_hir as hir;
 use rustc_index::vec::Idx;
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::Field;
 use rustc_middle::ty::print::with_no_trimmed_paths;
 use rustc_middle::ty::{self, AdtDef, Ty, TyCtxt};
@@ -212,8 +213,9 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
         // (If there isn't, then we can safely issue a hard
         // error, because that's never worked, due to compiler
         // using `PartialEq::eq` in this scenario in the past.)
-        let partial_eq_trait_id =
-            self.tcx().require_lang_item(hir::LangItem::PartialEq, Some(self.span));
+        let partial_eq_trait_id = self
+            .tcx()
+            .require_lang_item(hir::LangItem::PartialEq, Some(SpanSource::Span(self.span)));
         let obligation: PredicateObligation<'_> = predicate_for_trait_def(
             self.tcx(),
             self.param_env,

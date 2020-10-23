@@ -64,6 +64,7 @@ use rustc_hir as hir;
 use rustc_hir::lang_items::LangItem;
 use rustc_index::bit_set::{BitMatrix, BitSet};
 use rustc_index::vec::{Idx, IndexVec};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::{MutVisitor, PlaceContext, Visitor};
 use rustc_middle::mir::*;
 use rustc_middle::ty::subst::{Subst, SubstsRef};
@@ -393,7 +394,7 @@ fn make_generator_state_argument_indirect<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Bo
 fn make_generator_state_argument_pinned<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
     let ref_gen_ty = body.local_decls.raw[1].ty;
 
-    let pin_did = tcx.require_lang_item(LangItem::Pin, Some(body.span));
+    let pin_did = tcx.require_lang_item(LangItem::Pin, Some(SpanSource::Span(body.span)));
     let pin_adt_ref = tcx.adt_def(pin_did);
     let substs = tcx.intern_substs(&[ref_gen_ty.into()]);
     let pin_ref_gen_ty = tcx.mk_adt(pin_adt_ref, substs);

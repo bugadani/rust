@@ -2,6 +2,7 @@ use crate::util::patch::MirPatch;
 use rustc_hir as hir;
 use rustc_hir::lang_items::LangItem;
 use rustc_index::vec::Idx;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::traits::Reveal;
 use rustc_middle::ty::subst::SubstsRef;
@@ -947,7 +948,8 @@ where
     ) -> BasicBlock {
         let tcx = self.tcx();
         let unit_temp = Place::from(self.new_temp(tcx.mk_unit()));
-        let free_func = tcx.require_lang_item(LangItem::BoxFree, Some(self.source_info.span));
+        let free_func =
+            tcx.require_lang_item(LangItem::BoxFree, Some(SpanSource::Span(self.source_info.span)));
         let args = adt.variants[VariantIdx::new(0)]
             .fields
             .iter()

@@ -18,6 +18,7 @@ use rustc_hir::def_id::{CrateNum, DefId, CRATE_DEF_INDEX};
 use rustc_index::vec::{Idx, IndexVec};
 use rustc_infer::infer::region_constraints::{Constraint, RegionConstraintData};
 use rustc_middle::bug;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::resolve_lifetime as rl;
 use rustc_middle::ty::fold::TypeFolder;
 use rustc_middle::ty::subst::{InternalSubsts, Subst};
@@ -292,7 +293,7 @@ impl Clean<GenericBound> for hir::GenericBound<'_> {
         match *self {
             hir::GenericBound::Outlives(lt) => GenericBound::Outlives(lt.clean(cx)),
             hir::GenericBound::LangItemTrait(lang_item, span, _, generic_args) => {
-                let def_id = cx.tcx.require_lang_item(lang_item, Some(span));
+                let def_id = cx.tcx.require_lang_item(lang_item, Some(SpanSource::Span(span)));
 
                 let trait_ref = ty::TraitRef::identity(cx.tcx, def_id);
 

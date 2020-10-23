@@ -14,16 +14,28 @@ use rustc_hir::LangItem;
 use rustc_span::Span;
 use rustc_target::spec::PanicStrategy;
 
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum SpanSource {
+    Span(Span),
+    DefId(DefId),
+}
+
+impl SpanSource {
+    pub fn to_span<'tcx>(self, tcx: TyCtxt<'tcx>) -> Span {
+        match self {
+            SpanSource::Span(span) => span,
+            SpanSource::DefId(def_id) => tcx.def_span(def_id),
+        }
+    }
+}
+
 impl<'tcx> TyCtxt<'tcx> {
     /// Returns the `DefId` for a given `LangItem`.
     /// If not found, fatally aborts compilation.
-    pub fn require_lang_item(self, lang_item: LangItem, span: Option<Span>) -> DefId {
-        self.lang_items().require(lang_item).unwrap_or_else(|msg| {
-            if let Some(span) = span {
-                self.sess.span_fatal(span, &msg)
-            } else {
-                self.sess.fatal(&msg)
-            }
+    pub fn require_lang_item(self, lang_item: LangItem, span: Option<SpanSource>) -> DefId {
+        self.lang_items().require(lang_item).unwrap_or_else(|msg| match span {
+            Some(source) => self.sess.span_fatal(source.to_span(self), &msg),
+            None => self.sess.fatal(&msg),
         })
     }
 

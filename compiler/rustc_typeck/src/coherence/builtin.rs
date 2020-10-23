@@ -10,6 +10,7 @@ use rustc_hir::ItemKind;
 use rustc_infer::infer;
 use rustc_infer::infer::outlives::env::OutlivesEnvironment;
 use rustc_infer::infer::{RegionckMode, TyCtxtInferExt};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::CoerceUnsizedInfo;
 use rustc_middle::ty::TypeFoldable;
 use rustc_middle::ty::{self, Ty, TyCtxt};
@@ -124,9 +125,12 @@ fn visit_implementation_of_dispatch_from_dyn(tcx: TyCtxt<'_>, impl_did: LocalDef
     debug!("visit_implementation_of_dispatch_from_dyn: impl_did={:?}", impl_did);
 
     let impl_hir_id = tcx.hir().local_def_id_to_hir_id(impl_did);
+
+    // FIXME: only need to get the span because of ObligationCause
     let span = tcx.hir().span(impl_hir_id);
 
-    let dispatch_from_dyn_trait = tcx.require_lang_item(LangItem::DispatchFromDyn, Some(span));
+    let dispatch_from_dyn_trait =
+        tcx.require_lang_item(LangItem::DispatchFromDyn, Some(SpanSource::Span(span)));
 
     let source = tcx.type_of(impl_did);
     assert!(!source.has_escaping_bound_vars());
@@ -293,9 +297,12 @@ pub fn coerce_unsized_info(tcx: TyCtxt<'tcx>, impl_did: DefId) -> CoerceUnsizedI
 
     // this provider should only get invoked for local def-ids
     let impl_hir_id = tcx.hir().local_def_id_to_hir_id(impl_did.expect_local());
+
+    // FIXME: required by ObliationCause
     let span = tcx.hir().span(impl_hir_id);
 
-    let coerce_unsized_trait = tcx.require_lang_item(LangItem::CoerceUnsized, Some(span));
+    let coerce_unsized_trait =
+        tcx.require_lang_item(LangItem::CoerceUnsized, Some(SpanSource::Span(span)));
 
     let unsize_trait = tcx.lang_items().require(LangItem::Unsize).unwrap_or_else(|err| {
         tcx.sess.fatal(&format!("`CoerceUnsized` implementation {}", err));

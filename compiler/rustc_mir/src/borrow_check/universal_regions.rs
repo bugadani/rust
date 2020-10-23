@@ -21,6 +21,7 @@ use rustc_hir::lang_items::LangItem;
 use rustc_hir::{BodyOwnerKind, HirId};
 use rustc_index::vec::{Idx, IndexVec};
 use rustc_infer::infer::{InferCtxt, NLLRegionVariableOrigin};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::subst::{InternalSubsts, Subst, SubstsRef};
 use rustc_middle::ty::{self, RegionVid, Ty, TyCtxt};
@@ -457,7 +458,7 @@ impl<'cx, 'tcx> UniversalRegionsBuilder<'cx, 'tcx> {
             if self.infcx.tcx.fn_sig(def_id).c_variadic() {
                 let va_list_did = self.infcx.tcx.require_lang_item(
                     LangItem::VaList,
-                    Some(self.infcx.tcx.def_span(self.mir_def.did)),
+                    Some(SpanSource::DefId(self.mir_def.did.to_def_id())),
                 );
                 let region = self
                     .infcx
