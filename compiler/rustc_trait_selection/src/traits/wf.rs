@@ -4,9 +4,9 @@ use crate::traits;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_hir::lang_items::LangItem;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, SubstsRef};
 use rustc_middle::ty::{self, ToPredicate, Ty, TyCtxt, TypeFoldable, WithConstness};
-use rustc_span::Span;
 
 use std::iter;
 use std::rc::Rc;
@@ -22,7 +22,7 @@ pub fn obligations<'a, 'tcx>(
     body_id: hir::HirId,
     recursion_depth: usize,
     arg: GenericArg<'tcx>,
-    span: Span,
+    span_source: SpanSource,
 ) -> Option<Vec<traits::PredicateObligation<'tcx>>> {
     // Handle the "livelock" case (see comment above) by bailing out if necessary.
     let arg = match arg.unpack() {
@@ -60,8 +60,15 @@ pub fn obligations<'a, 'tcx>(
         GenericArgKind::Lifetime(..) => return Some(Vec::new()),
     };
 
-    let mut wf =
-        WfPredicates { infcx, param_env, body_id, span, out: vec![], recursion_depth, item: None };
+    let mut wf = WfPredicates {
+        infcx,
+        param_env,
+        body_id,
+        span_source,
+        out: vec![],
+        recursion_depth,
+        item: None,
+    };
     wf.compute(arg);
     debug!("wf::obligations({:?}, body_id={:?}) = {:?}", arg, body_id, wf.out);
 
@@ -79,11 +86,18 @@ pub fn trait_obligations<'a, 'tcx>(
     param_env: ty::ParamEnv<'tcx>,
     body_id: hir::HirId,
     trait_ref: &ty::TraitRef<'tcx>,
-    span: Span,
+    span_source: SpanSource,
     item: Option<&'tcx hir::Item<'tcx>>,
 ) -> Vec<traits::PredicateObligation<'tcx>> {
-    let mut wf =
-        WfPredicates { infcx, param_env, body_id, span, out: vec![], recursion_depth: 0, item };
+    let mut wf = WfPredicates {
+        infcx,
+        param_env,
+        body_id,
+        span_source,
+        out: vec![],
+        recursion_depth: 0,
+        item,
+    };
     wf.compute_trait_ref(trait_ref, Elaborate::All);
     wf.normalize()
 }
@@ -93,13 +107,13 @@ pub fn predicate_obligations<'a, 'tcx>(
     param_env: ty::ParamEnv<'tcx>,
     body_id: hir::HirId,
     predicate: ty::Predicate<'tcx>,
-    span: Span,
+    span_source: SpanSource,
 ) -> Vec<traits::PredicateObligation<'tcx>> {
     let mut wf = WfPredicates {
         infcx,
         param_env,
         body_id,
-        span,
+        span_source,
         out: vec![],
         recursion_depth: 0,
         item: None,
@@ -151,7 +165,7 @@ struct WfPredicates<'a, 'tcx> {
     infcx: &'a InferCtxt<'a, 'tcx>,
     param_env: ty::ParamEnv<'tcx>,
     body_id: hir::HirId,
-    span: Span,
+    span_source: SpanSource,
     out: Vec<traits::PredicateObligation<'tcx>>,
     recursion_depth: usize,
     item: Option<&'tcx hir::Item<'tcx>>,
@@ -221,7 +235,7 @@ fn extend_cause_with_original_assoc_item_obligation<'tcx>(
                 if let Some(impl_item_span) =
                     items.iter().find(|item| item.ident == trait_assoc_item.ident).map(fix_span)
                 {
-                    cause.make_mut().span = impl_item_span;
+                    cause.make_mut().span_source = SpanSource::Span(impl_item_span);
                 }
             }
         }
@@ -236,7 +250,7 @@ fn extend_cause_with_original_assoc_item_obligation<'tcx>(
                         items.iter().find(|i| i.ident == trait_assoc_item.ident).map(fix_span)
                     })
                 {
-                    cause.make_mut().span = impl_item_span;
+                    cause.make_mut().span_source = SpanSource::Span(impl_item_span);
                 }
             }
         }
@@ -250,7 +264,7 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
     }
 
     fn cause(&self, code: traits::ObligationCauseCode<'tcx>) -> traits::ObligationCause<'tcx> {
-        traits::ObligationCause::new(self.span, self.body_id, code)
+        traits::ObligationCause::new(self.span_source, self.body_id, code)
     }
 
     fn normalize(mut self) -> Vec<traits::PredicateObligation<'tcx>> {
@@ -334,7 +348,7 @@ impl<'a, 'tcx> WfPredicates<'a, 'tcx> {
                     // The first subst is the self ty - use the correct span for it.
                     if i == 0 {
                         if let Some(hir::ItemKind::Impl { self_ty, .. }) = item.map(|i| &i.kind) {
-                            new_cause.make_mut().span = self_ty.span;
+                            new_cause.make_mut().span_source = SpanSource::Span(self_ty.span);
                         }
                     }
                     traits::Obligation::with_depth(

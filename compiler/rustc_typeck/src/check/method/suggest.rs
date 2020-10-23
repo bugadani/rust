@@ -13,6 +13,7 @@ use rustc_hir::lang_items::LangItem;
 use rustc_hir::{ExprKind, Node, QPath};
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_middle::hir::map as hir_map;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::print::with_crate_prefix;
 use rustc_middle::ty::{
     self, ToPolyTraitRef, ToPredicate, Ty, TyCtxt, TypeFoldable, WithConstness,
@@ -49,7 +50,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             &[self
                                 .next_ty_var(TypeVariableOrigin {
                                     kind: TypeVariableOriginKind::MiscVariable,
-                                    span,
+                                    span_source: SpanSource::Span(span),
                                 })
                                 .into()],
                         );

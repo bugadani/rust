@@ -17,6 +17,7 @@ use rustc_hir as hir;
 use rustc_hir::def::{CtorOf, DefKind, Namespace};
 use rustc_hir::def_id::DefId;
 use rustc_infer::infer::{self, InferOk};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::Subst;
 use rustc_middle::ty::subst::{InternalSubsts, SubstsRef};
 use rustc_middle::ty::GenericParamDefKind;
@@ -311,7 +312,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
                 }
             }
-            self.var_for_def(span, param)
+            self.var_for_def(SpanSource::Span(span), param)
         });
 
         let trait_ref = ty::TraitRef::new(trait_def_id, substs);
@@ -358,7 +359,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // `instantiate_type_scheme` can normalize associated types that
         // may reference those regions.
         let fn_sig = tcx.fn_sig(def_id);
-        let fn_sig = self.replace_bound_vars_with_fresh_vars(span, infer::FnCall, &fn_sig).0;
+        let fn_sig = self
+            .replace_bound_vars_with_fresh_vars(SpanSource::Span(span), infer::FnCall, &fn_sig)
+            .0;
         let fn_sig = fn_sig.subst(self.tcx, substs);
 
         let InferOk { value, obligations: o } =

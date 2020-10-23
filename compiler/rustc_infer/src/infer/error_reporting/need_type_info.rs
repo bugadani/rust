@@ -7,6 +7,7 @@ use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{Body, Expr, ExprKind, FnRetTy, HirId, Local, Pat};
 use rustc_middle::hir::map::Map;
 use rustc_middle::infer::unify_key::ConstVariableOriginKind;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::print::Print;
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind};
 use rustc_middle::ty::{self, DefIdTree, InferConst, Ty};
@@ -210,7 +211,7 @@ impl Into<rustc_errors::DiagnosticId> for TypeAnnotationNeeded {
 /// Information about a constant or a type containing inference variables.
 pub struct InferenceDiagnosticsData {
     pub name: String,
-    pub span: Option<Span>,
+    pub span_source: Option<SpanSource>,
     pub description: Cow<'static, str>,
     pub parent_name: Option<String>,
     pub parent_description: Option<&'static str>,
@@ -255,7 +256,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                         if name != kw::SelfUpper {
                             return InferenceDiagnosticsData {
                                 name: name.to_string(),
-                                span: Some(var_origin.span),
+                                span_source: Some(var_origin.span_source),
                                 description: "type parameter".into(),
                                 parent_name,
                                 parent_description,
@@ -272,7 +273,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 let _ = ty.print(printer);
                 InferenceDiagnosticsData {
                     name: s,
-                    span: None,
+                    span_source: None,
                     description: ty.prefix_string(),
                     parent_name: None,
                     parent_description: None,
@@ -306,14 +307,15 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
                         return InferenceDiagnosticsData {
                             name: name.to_string(),
-                            span: Some(origin.span),
+                            span_source: Some(origin.span_source),
                             description: "const parameter".into(),
                             parent_name,
                             parent_description,
                         };
                     }
 
-                    debug_assert!(!origin.span.is_dummy());
+                    // FIXME this defeats the whole purpose of span_source
+                    debug_assert!(!origin.span_source.to_span(self.tcx).is_dummy());
                     let mut s = String::new();
                     let mut printer =
                         ty::print::FmtPrinter::new(self.tcx, &mut s, Namespace::ValueNS);
@@ -323,7 +325,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                     let _ = ct.print(printer);
                     InferenceDiagnosticsData {
                         name: s,
-                        span: Some(origin.span),
+                        span_source: Some(origin.span_source),
                         description: "the constant".into(),
                         parent_name: None,
                         parent_description: None,
@@ -381,14 +383,14 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         }
         let err_span = if let Some(pattern) = local_visitor.found_arg_pattern {
             pattern.span
-        } else if let Some(span) = arg_data.span {
+        } else if let Some(span) = arg_data.span_source {
             // `span` here lets us point at `sum` instead of the entire right hand side expr:
             // error[E0282]: type annotations needed
             //  --> file2.rs:3:15
             //   |
             // 3 |     let _ = x.sum() as f64;
             //   |               ^^^ cannot infer type for `S`
-            span
+            span.to_span(self.tcx)
         } else if let Some(ExprKind::MethodCall(_, call_span, _, _)) =
             local_visitor.found_method_call.map(|e| &e.kind)
         {
@@ -610,17 +612,14 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         //   |               ^^^ cannot infer type for `S`
         //   |
         //   = note: type must be known at this point
-        let span = arg_data.span.unwrap_or(err_span);
-        if !err
-            .span
-            .span_labels()
-            .iter()
-            .any(|span_label| span_label.label.is_some() && span_label.span == span)
-            && local_visitor.found_arg_pattern.is_none()
+        let span = arg_data.span_source.unwrap_or(SpanSource::Span(err_span));
+        if !err.span.span_labels().iter().any(|span_label| {
+            span_label.label.is_some() && SpanSource::Span(span_label.span) == span
+        }) && local_visitor.found_arg_pattern.is_none()
         {
             // Avoid multiple labels pointing at `span`.
             err.span_label(
-                span,
+                span.to_span(self.tcx),
                 InferCtxt::cannot_infer_msg(
                     kind_str,
                     &arg_data.name,

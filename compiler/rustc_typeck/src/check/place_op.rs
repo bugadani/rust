@@ -3,6 +3,7 @@ use crate::check::{FnCtxt, PlaceOp};
 use rustc_hir as hir;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_infer::infer::InferOk;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::{Adjust, Adjustment, OverloadedDeref, PointerCast};
 use rustc_middle::ty::adjustment::{AllowTwoPhase, AutoBorrow, AutoBorrowMutability};
 use rustc_middle::ty::{self, Ty};
@@ -98,7 +99,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // If some lookup succeeded, install method in table
             let input_ty = self.next_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::AutoDeref,
-                span: base_expr.span,
+                span_source: SpanSource::Span(base_expr.span),
             });
             let method =
                 self.try_overloaded_place_op(expr.span, self_ty, &[input_ty], PlaceOp::Index);

@@ -428,7 +428,7 @@ impl<'tcx> MiniGraph<'tcx> {
                     each_edge(a, tcx.mk_region(ReVar(b)));
                 }
                 &AddVerify(i) => span_bug!(
-                    verifys[i].origin.span(),
+                    verifys[i].origin.span_source().to_span(tcx),
                     "we never add verifications while doing higher-ranked things",
                 ),
                 &AddCombination(..) | &AddVar(..) => {}

@@ -112,6 +112,7 @@ use rustc_hir::{HirIdMap, Node};
 use rustc_index::bit_set::BitSet;
 use rustc_index::vec::Idx;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::{TypeFoldable, TypeFolder};
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::subst::GenericArgKind;
@@ -536,7 +537,7 @@ fn typeck_with_fallback<'tcx>(
                             ..
                         }) if anon_const.hir_id == id => fcx.next_ty_var(TypeVariableOrigin {
                             kind: TypeVariableOriginKind::TypeInference,
-                            span,
+                            span_source: SpanSource::Span(span),
                         }),
                         _ => fallback(),
                     },

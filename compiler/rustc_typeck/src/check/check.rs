@@ -93,8 +93,10 @@ pub(super) fn check_fn<'a, 'tcx>(
     fn_maybe_err(tcx, span, fn_sig.abi);
 
     if body.generator_kind.is_some() && can_be_generator.is_some() {
-        let yield_ty = fcx
-            .next_ty_var(TypeVariableOrigin { kind: TypeVariableOriginKind::TypeInference, span });
+        let yield_ty = fcx.next_ty_var(TypeVariableOrigin {
+            kind: TypeVariableOriginKind::TypeInference,
+            span_source: SpanSource::Span(span),
+        });
         fcx.require_type_is_sized(yield_ty, span, traits::SizedYieldType);
 
         // Resume type defaults to `()` if the generator has no argument.
@@ -112,7 +114,8 @@ pub(super) fn check_fn<'a, 'tcx>(
     let maybe_va_list = if fn_sig.c_variadic {
         let span = body.params.last().unwrap().span;
         let va_list_did = tcx.require_lang_item(LangItem::VaList, Some(SpanSource::Span(span)));
-        let region = fcx.next_region_var(RegionVariableOrigin::MiscVariable(span));
+        let region =
+            fcx.next_region_var(RegionVariableOrigin::MiscVariable(SpanSource::Span(span)));
 
         Some(tcx.type_of(va_list_did).subst(tcx, &[region.into()]))
     } else {
@@ -166,8 +169,10 @@ pub(super) fn check_fn<'a, 'tcx>(
     // This ensures that all nested generators appear before the entry of this generator.
     // resolve_generator_interiors relies on this property.
     let gen_ty = if let (Some(_), Some(gen_kind)) = (can_be_generator, body.generator_kind) {
-        let interior = fcx
-            .next_ty_var(TypeVariableOrigin { kind: TypeVariableOriginKind::MiscVariable, span });
+        let interior = fcx.next_ty_var(TypeVariableOrigin {
+            kind: TypeVariableOriginKind::MiscVariable,
+            span_source: SpanSource::Span(span),
+        });
         fcx.deferred_generator_interiors.borrow_mut().push((body.id(), interior, gen_kind));
 
         let (resume_ty, yield_ty) = fcx.resume_yield_tys.unwrap();
@@ -209,7 +214,7 @@ pub(super) fn check_fn<'a, 'tcx>(
     if actual_return_ty.is_never() {
         actual_return_ty = fcx.next_diverging_ty_var(TypeVariableOrigin {
             kind: TypeVariableOriginKind::DivergingFn,
-            span,
+            span_source: SpanSource::Span(span),
         });
     }
     fcx.demand_suptype(span, revealed_ret_ty, actual_return_ty);
@@ -223,7 +228,7 @@ pub(super) fn check_fn<'a, 'tcx>(
                 let trait_ref = ty::TraitRef::new(term_id, substs);
                 let return_ty_span = decl.output.span();
                 let cause = traits::ObligationCause::new(
-                    return_ty_span,
+                    SpanSource::Span(return_ty_span),
                     fn_id,
                     ObligationCauseCode::MainFunctionType,
                 );

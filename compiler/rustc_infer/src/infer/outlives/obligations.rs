@@ -99,7 +99,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
         cause: &ObligationCause<'tcx>,
     ) {
         let origin = SubregionOrigin::from_obligation_cause(cause, || {
-            infer::RelateParamBound(cause.span, sup_type)
+            infer::RelateParamBound(cause.span_source, sup_type)
         });
 
         self.register_region_obligation(
@@ -180,7 +180,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
                 outlives.type_must_outlive(origin, sup_type, sub_region);
             } else {
                 self.tcx.sess.delay_span_bug(
-                    origin.span(),
+                    origin.span_source().to_span(self.tcx),
                     &format!("no region-bound-pairs for {:?}", body_id),
                 )
             }
@@ -316,7 +316,7 @@ where
                     // later, since if a type variable is not resolved by
                     // this point it never will be
                     self.tcx.sess.delay_span_bug(
-                        origin.span(),
+                        origin.span_source().to_span(self.tcx),
                         &format!("unresolved inference variable in outlives: {:?}", v),
                     );
                 }

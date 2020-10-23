@@ -16,6 +16,7 @@ use rustc_infer::infer;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_infer::infer::unify_key::{ConstVariableOrigin, ConstVariableOriginKind};
 use rustc_middle::hir::map::blocks::FnLikeNode;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::subst::GenericArgKind;
 use rustc_middle::ty::{self, Const, Ty, TyCtxt};
@@ -141,7 +142,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     }
 
     pub fn cause(&self, span: Span, code: ObligationCauseCode<'tcx>) -> ObligationCause<'tcx> {
-        ObligationCause::new(span, self.body_id, code)
+        ObligationCause::new(SpanSource::Span(span), self.body_id, code)
     }
 
     pub fn misc(&self, span: Span) -> ObligationCause<'tcx> {
@@ -209,8 +210,8 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
 
     fn re_infer(&self, def: Option<&ty::GenericParamDef>, span: Span) -> Option<ty::Region<'tcx>> {
         let v = match def {
-            Some(def) => infer::EarlyBoundRegion(span, def.name),
-            None => infer::MiscVariable(span),
+            Some(def) => infer::EarlyBoundRegion(SpanSource::Span(span), def.name),
+            None => infer::MiscVariable(SpanSource::Span(span)),
         };
         Some(self.next_region_var(v))
     }
@@ -221,14 +222,16 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
 
     fn ty_infer(&self, param: Option<&ty::GenericParamDef>, span: Span) -> Ty<'tcx> {
         if let Some(param) = param {
-            if let GenericArgKind::Type(ty) = self.var_for_def(span, param).unpack() {
+            if let GenericArgKind::Type(ty) =
+                self.var_for_def(SpanSource::Span(span), param).unpack()
+            {
                 return ty;
             }
             unreachable!()
         } else {
             self.next_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::TypeInference,
-                span,
+                span_source: SpanSource::Span(span),
             })
         }
     }
@@ -240,14 +243,19 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         span: Span,
     ) -> &'tcx Const<'tcx> {
         if let Some(param) = param {
-            if let GenericArgKind::Const(ct) = self.var_for_def(span, param).unpack() {
+            if let GenericArgKind::Const(ct) =
+                self.var_for_def(SpanSource::Span(span), param).unpack()
+            {
                 return ct;
             }
             unreachable!()
         } else {
             self.next_const_var(
                 ty,
-                ConstVariableOrigin { kind: ConstVariableOriginKind::ConstInference, span },
+                ConstVariableOrigin {
+                    kind: ConstVariableOriginKind::ConstInference,
+                    span_source: SpanSource::Span(span),
+                },
             )
         }
     }
@@ -260,7 +268,7 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         poly_trait_ref: ty::PolyTraitRef<'tcx>,
     ) -> Ty<'tcx> {
         let (trait_ref, _) = self.replace_bound_vars_with_fresh_vars(
-            span,
+            SpanSource::Span(span),
             infer::LateBoundRegionConversionTime::AssocTypeProjection(item_def_id),
             &poly_trait_ref,
         );

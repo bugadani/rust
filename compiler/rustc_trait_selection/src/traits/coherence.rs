@@ -9,11 +9,11 @@ use crate::traits::select::IntercrateAmbiguityCause;
 use crate::traits::SkipLeakCheck;
 use crate::traits::{self, Normalized, Obligation, ObligationCause, SelectionContext};
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::subst::Subst;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_span::symbol::sym;
-use rustc_span::DUMMY_SP;
 use std::iter;
 
 /// Whether we do the orphan check relative to this crate or
@@ -93,7 +93,7 @@ fn with_fresh_ty_vars<'cx, 'tcx>(
     impl_def_id: DefId,
 ) -> ty::ImplHeader<'tcx> {
     let tcx = selcx.tcx();
-    let impl_substs = selcx.infcx().fresh_substs_for_item(DUMMY_SP, impl_def_id);
+    let impl_substs = selcx.infcx().fresh_substs_for_item(SpanSource::DUMMY, impl_def_id);
 
     let header = ty::ImplHeader {
         impl_def_id,

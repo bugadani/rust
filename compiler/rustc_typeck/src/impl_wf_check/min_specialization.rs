@@ -73,6 +73,7 @@ use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_infer::infer::outlives::env::OutlivesEnvironment;
 use rustc_infer::infer::{InferCtxt, RegionckMode, TyCtxtInferExt};
 use rustc_infer::traits::specialization_graph::Node;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::{GenericArg, InternalSubsts, SubstsRef};
 use rustc_middle::ty::trait_def::TraitSpecializationKind;
 use rustc_middle::ty::{self, InstantiatedPredicates, TyCtxt, TypeFoldable};
@@ -339,7 +340,7 @@ fn check_predicates<'tcx>(
             tcx.hir().local_def_id_to_hir_id(impl1_def_id),
             0,
             arg,
-            span,
+            SpanSource::Span(span),
         ) {
             impl2_predicates
                 .predicates

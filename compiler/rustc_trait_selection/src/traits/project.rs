@@ -24,6 +24,7 @@ use rustc_errors::ErrorReported;
 use rustc_hir::def_id::DefId;
 use rustc_hir::lang_items::LangItem;
 use rustc_infer::infer::resolve::OpportunisticRegionResolver;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::{TypeFoldable, TypeFolder};
 use rustc_middle::ty::subst::Subst;
 use rustc_middle::ty::{self, ToPolyTraitRef, ToPredicate, Ty, TyCtxt, WithConstness};
@@ -443,7 +444,7 @@ pub fn normalize_projection_type<'a, 'b, 'tcx>(
         let def_id = projection_ty.item_def_id;
         let ty_var = selcx.infcx().next_ty_var(TypeVariableOrigin {
             kind: TypeVariableOriginKind::NormalizeProjectionType,
-            span: tcx.def_span(def_id),
+            span_source: SpanSource::DefId(def_id),
         });
         let projection = ty::Binder::dummy(ty::ProjectionPredicate { projection_ty, ty: ty_var });
         let obligation =
@@ -684,11 +685,10 @@ fn normalize_to_error<'a, 'tcx>(
         param_env,
         predicate: trait_ref.without_const().to_predicate(selcx.tcx()),
     };
-    let tcx = selcx.infcx().tcx;
     let def_id = projection_ty.item_def_id;
     let new_value = selcx.infcx().next_ty_var(TypeVariableOrigin {
         kind: TypeVariableOriginKind::NormalizeProjectionType,
-        span: tcx.def_span(def_id),
+        span_source: SpanSource::DefId(def_id),
     });
     Normalized { value: new_value, obligations: vec![trait_obligation] }
 }
@@ -1103,7 +1103,7 @@ fn assemble_candidates_from_impls<'cx, 'tcx>(
             super::ImplSource::AutoImpl(..) | super::ImplSource::Builtin(..) => {
                 // These traits have no associated types.
                 selcx.tcx().sess.delay_span_bug(
-                    obligation.cause.span,
+                    obligation.cause.span_source.to_span(selcx.tcx()),
                     &format!("Cannot project an associated type from `{:?}`", impl_source),
                 );
                 return Err(());
@@ -1173,7 +1173,7 @@ fn confirm_select_candidate<'cx, 'tcx>(
         | super::ImplSource::TraitAlias(..) => {
             // we don't create Select candidates with this kind of resolution
             span_bug!(
-                obligation.cause.span,
+                obligation.cause.span_source.to_span(selcx.tcx()),
                 "Cannot project an associated type from `{:?}`",
                 impl_source
             )
@@ -1334,7 +1334,7 @@ fn confirm_param_env_candidate<'cx, 'tcx>(
     let param_env = obligation.param_env;
 
     let (cache_entry, _) = infcx.replace_bound_vars_with_fresh_vars(
-        cause.span,
+        cause.span_source,
         LateBoundRegionConversionTime::HigherRankedType,
         &poly_cache_entry,
     );
@@ -1369,7 +1369,9 @@ fn confirm_param_env_candidate<'cx, 'tcx>(
                 obligation, poly_cache_entry, e,
             );
             debug!("confirm_param_env_candidate: {}", msg);
-            let err = infcx.tcx.ty_error_with_message(obligation.cause.span, &msg);
+            let err = infcx
+                .tcx
+                .ty_error_with_message(obligation.cause.span_source.to_span(infcx.tcx), &msg);
             Progress { ty: err, obligations: vec![] }
         }
     }
@@ -1415,7 +1417,7 @@ fn confirm_impl_candidate<'cx, 'tcx>(
     let ty = tcx.type_of(assoc_ty.item.def_id);
     if substs.len() != tcx.generics_of(assoc_ty.item.def_id).count() {
         let err = tcx.ty_error_with_message(
-            obligation.cause.span,
+            obligation.cause.span_source.to_span(tcx),
             "impl item and trait item have different parameter counts",
         );
         Progress { ty: err, obligations: nested }

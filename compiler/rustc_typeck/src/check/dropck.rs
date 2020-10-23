@@ -5,6 +5,7 @@ use rustc_errors::{struct_span_err, ErrorReported};
 use rustc_infer::infer::outlives::env::OutlivesEnvironment;
 use rustc_infer::infer::{InferOk, RegionckMode, TyCtxtInferExt};
 use rustc_infer::traits::TraitEngineExt as _;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::relate::{Relate, RelateResult, TypeRelation};
 use rustc_middle::ty::subst::{Subst, SubstsRef};
@@ -81,12 +82,13 @@ fn ensure_drop_params_and_item_params_correspond<'tcx>(
 
         let named_type = tcx.type_of(self_type_did);
 
-        let drop_impl_span = tcx.def_span(drop_impl_did);
-        let fresh_impl_substs =
-            infcx.fresh_substs_for_item(drop_impl_span, drop_impl_did.to_def_id());
+        let fresh_impl_substs = infcx.fresh_substs_for_item(
+            SpanSource::DefId(drop_impl_did.to_def_id()),
+            drop_impl_did.to_def_id(),
+        );
         let fresh_impl_self_ty = drop_impl_ty.subst(tcx, fresh_impl_substs);
 
-        let cause = &ObligationCause::misc(drop_impl_span, drop_impl_hir_id);
+        let cause = &ObligationCause::misc_with_def_id(drop_impl_did.to_def_id(), drop_impl_hir_id);
         match infcx.at(cause, impl_param_env).eq(named_type, fresh_impl_self_ty) {
             Ok(InferOk { obligations, .. }) => {
                 fulfillment_cx.register_predicate_obligations(infcx, obligations);
@@ -96,7 +98,7 @@ fn ensure_drop_params_and_item_params_correspond<'tcx>(
                 let self_descr = tcx.def_kind(self_type_did).descr(self_type_did);
                 struct_span_err!(
                     tcx.sess,
-                    drop_impl_span,
+                    tcx.def_span(drop_impl_did),
                     E0366,
                     "`Drop` impls cannot be specialized"
                 )

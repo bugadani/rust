@@ -5,7 +5,6 @@ use rustc_infer::infer::{InferOk, TyCtxtInferExt};
 use rustc_infer::traits;
 use rustc_middle::ty::subst::Subst;
 use rustc_middle::ty::{ToPredicate, WithConstness};
-use rustc_span::DUMMY_SP;
 
 use super::*;
 
@@ -43,11 +42,11 @@ impl<'a, 'tcx> BlanketImplFinder<'a, 'tcx> {
                         _ => return false,
                     }
 
-                    let substs = infcx.fresh_substs_for_item(DUMMY_SP, param_env_def_id);
+                    let substs = infcx.fresh_substs_for_item(SpanSource::DUMMY, param_env_def_id);
                     let ty = ty.subst(infcx.tcx, substs);
                     let param_env = param_env.subst(infcx.tcx, substs);
 
-                    let impl_substs = infcx.fresh_substs_for_item(DUMMY_SP, impl_def_id);
+                    let impl_substs = infcx.fresh_substs_for_item(SpanSource::DUMMY, impl_def_id);
                     let trait_ref = trait_ref.subst(infcx.tcx, impl_substs);
 
                     // Require the type the impl is implemented on to match

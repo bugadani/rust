@@ -27,9 +27,6 @@ impl<'a, 'tcx> CombineFields<'a, 'tcx> {
         // Note: this is a subtle algorithm.  For a full explanation,
         // please see the large comment at the end of the file in the (inlined) module
         // `doc`.
-
-        let span = self.trace.cause.span;
-
         self.infcx.commit_if_ok(|_| {
             // First, we instantiate each bound region in the supertype with a
             // fresh placeholder region.
@@ -39,8 +36,11 @@ impl<'a, 'tcx> CombineFields<'a, 'tcx> {
             // with a fresh region variable. These region variables --
             // but no other pre-existing region variables -- can name
             // the placeholders.
-            let (a_prime, _) =
-                self.infcx.replace_bound_vars_with_fresh_vars(span, HigherRankedType, &a);
+            let (a_prime, _) = self.infcx.replace_bound_vars_with_fresh_vars(
+                self.trace.cause.span_source,
+                HigherRankedType,
+                &a,
+            );
 
             debug!("a_prime={:?}", a_prime);
             debug!("b_prime={:?}", b_prime);

@@ -17,6 +17,15 @@ macro_rules! span_bug {
     });
 }
 
+#[macro_export]
+macro_rules! span_source_bug {
+    ($span:expr, $msg:expr) => ({ $crate::util::bug::span_source_bug_fmt($span, ::std::format_args!($msg)) });
+    ($span:expr, $msg:expr,) => ({ $crate::span_source_bug!($span, $msg) });
+    ($span:expr, $fmt:expr, $($arg:tt)+) => ({
+        $crate::util::bug::span_source_bug_fmt($span, ::std::format_args!($fmt, $($arg)+))
+    });
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // Lift and TypeFoldable macros
 //

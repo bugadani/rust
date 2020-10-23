@@ -83,6 +83,7 @@ use rustc_hir::PatKind;
 use rustc_infer::infer::outlives::env::OutlivesEnvironment;
 use rustc_infer::infer::{self, RegionObligation, RegionckMode};
 use rustc_middle::hir::place::{PlaceBase, PlaceWithHirId};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment;
 use rustc_middle::ty::{self, Ty};
 use rustc_span::Span;
@@ -641,7 +642,7 @@ impl<'a, 'tcx> RegionCtxt<'a, 'tcx> {
         borrow_kind: ty::BorrowKind,
         borrow_place: &PlaceWithHirId<'tcx>,
     ) {
-        let origin = infer::DataBorrowed(borrow_place.place.ty(), span);
+        let origin = infer::DataBorrowed(borrow_place.place.ty(), SpanSource::Span(span));
         self.type_must_outlive(origin, borrow_place.place.ty(), borrow_region);
 
         for pointer_ty in borrow_place.place.deref_tys() {
@@ -706,7 +707,7 @@ impl<'a, 'tcx> RegionCtxt<'a, 'tcx> {
         ref_mutability: hir::Mutability,
     ) -> bool {
         debug!("link_reborrowed_region: {:?} <= {:?}", borrow_region, ref_region);
-        self.sub_regions(infer::Reborrow(span), borrow_region, ref_region);
+        self.sub_regions(infer::Reborrow(SpanSource::Span(span)), borrow_region, ref_region);
 
         // Decide whether we need to recurse and link any regions within
         // the `ref_cmt`. This is concerned for the case where the value
@@ -777,7 +778,7 @@ impl<'a, 'tcx> RegionCtxt<'a, 'tcx> {
         match self.typeck_results.borrow().upvar_capture(upvar_id) {
             ty::UpvarCapture::ByRef(upvar_borrow) => {
                 self.sub_regions(
-                    infer::ReborrowUpvar(span, upvar_id),
+                    infer::ReborrowUpvar(SpanSource::Span(span), upvar_id),
                     borrow_region,
                     upvar_borrow.region,
                 );
@@ -803,7 +804,7 @@ impl<'a, 'tcx> RegionCtxt<'a, 'tcx> {
                         bound_region: ty::BrEnv,
                     }));
                     self.sub_regions(
-                        infer::ReborrowUpvar(span, upvar_id),
+                        infer::ReborrowUpvar(SpanSource::Span(span), upvar_id),
                         borrow_region,
                         env_region,
                     );

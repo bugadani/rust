@@ -9,6 +9,7 @@ pub mod specialization_graph;
 mod structural_impls;
 
 use crate::infer::canonical::Canonical;
+use crate::middle::lang_items::SpanSource;
 use crate::mir::interpret::ErrorHandled;
 use crate::ty::subst::SubstsRef;
 use crate::ty::{self, AdtKind, Ty, TyCtxt};
@@ -89,8 +90,11 @@ pub struct ObligationCause<'tcx> {
     data: Option<Rc<ObligationCauseData<'tcx>>>,
 }
 
-const DUMMY_OBLIGATION_CAUSE_DATA: ObligationCauseData<'static> =
-    ObligationCauseData { span: DUMMY_SP, body_id: hir::CRATE_HIR_ID, code: MiscObligation };
+const DUMMY_OBLIGATION_CAUSE_DATA: ObligationCauseData<'static> = ObligationCauseData {
+    span_source: SpanSource::DUMMY,
+    body_id: hir::CRATE_HIR_ID,
+    code: MiscObligation,
+};
 
 // Correctly format `ObligationCause::dummy`.
 impl<'tcx> fmt::Debug for ObligationCause<'tcx> {
@@ -110,7 +114,7 @@ impl Deref for ObligationCause<'tcx> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Lift)]
 pub struct ObligationCauseData<'tcx> {
-    pub span: Span,
+    pub span_source: SpanSource,
 
     /// The ID of the fn body that triggered this obligation. This is
     /// used for region obligations to determine the precise
@@ -126,19 +130,23 @@ pub struct ObligationCauseData<'tcx> {
 impl<'tcx> ObligationCause<'tcx> {
     #[inline]
     pub fn new(
-        span: Span,
+        span_source: SpanSource,
         body_id: hir::HirId,
         code: ObligationCauseCode<'tcx>,
     ) -> ObligationCause<'tcx> {
-        ObligationCause { data: Some(Rc::new(ObligationCauseData { span, body_id, code })) }
+        ObligationCause { data: Some(Rc::new(ObligationCauseData { span_source, body_id, code })) }
     }
 
     pub fn misc(span: Span, body_id: hir::HirId) -> ObligationCause<'tcx> {
-        ObligationCause::new(span, body_id, MiscObligation)
+        ObligationCause::new(SpanSource::Span(span), body_id, MiscObligation)
+    }
+
+    pub fn misc_with_def_id(def_id: DefId, body_id: hir::HirId) -> ObligationCause<'tcx> {
+        ObligationCause::new(SpanSource::DefId(def_id), body_id, MiscObligation)
     }
 
     pub fn dummy_with_span(span: Span) -> ObligationCause<'tcx> {
-        ObligationCause::new(span, hir::CRATE_HIR_ID, MiscObligation)
+        ObligationCause::new(SpanSource::Span(span), hir::CRATE_HIR_ID, MiscObligation)
     }
 
     #[inline(always)]
@@ -155,13 +163,13 @@ impl<'tcx> ObligationCause<'tcx> {
             ObligationCauseCode::CompareImplMethodObligation { .. }
             | ObligationCauseCode::MainFunctionType
             | ObligationCauseCode::StartFunctionType => {
-                tcx.sess.source_map().guess_head_span(self.span)
+                tcx.sess.source_map().guess_head_span(self.span_source.to_span(tcx))
             }
             ObligationCauseCode::MatchExpressionArm(box MatchExpressionArmCause {
                 arm_span,
                 ..
             }) => arm_span,
-            _ => self.span,
+            _ => self.span_source.to_span(tcx),
         }
     }
 }

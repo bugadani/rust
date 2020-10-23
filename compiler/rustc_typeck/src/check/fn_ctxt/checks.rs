@@ -14,6 +14,7 @@ use rustc_hir as hir;
 use rustc_hir::def::{DefKind, Res};
 use rustc_hir::def_id::DefId;
 use rustc_hir::{ExprKind, Node, QPath};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::AllowTwoPhase;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::{self, Ty};
@@ -465,8 +466,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             // Check bounds on type arguments used in the path.
             let (bounds, _) = self.instantiate_bounds(path_span, did, substs);
-            let cause =
-                traits::ObligationCause::new(path_span, self.body_id, traits::ItemObligation(did));
+            let cause = traits::ObligationCause::new(
+                SpanSource::Span(path_span),
+                self.body_id,
+                traits::ItemObligation(did),
+            );
             self.add_obligations_for_parameters(cause, bounds);
 
             Some((variant, ty))
@@ -904,7 +908,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // Only if the cause is somewhere inside the expression we want try to point at arg.
             // Otherwise, it means that the cause is somewhere else and we should not change
             // anything because we can break the correct span.
-            if !call_sp.contains(error.obligation.cause.span) {
+            if !call_sp.contains(error.obligation.cause.span_source.to_span(self.tcx)) {
                 continue;
             }
 
@@ -939,7 +943,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 if let (Some(ref_in), None) = (referenced_in.pop(), referenced_in.pop()) {
                     // We make sure that only *one* argument matches the obligation failure
                     // and we assign the obligation's span to its expression's.
-                    error.obligation.cause.make_mut().span = args[ref_in].span;
+                    error.obligation.cause.make_mut().span_source =
+                        SpanSource::Span(args[ref_in].span);
                     error.points_at_arg_span = true;
                 }
             }
@@ -982,7 +987,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                         let ty = AstConv::ast_ty_to_ty(self, hir_ty);
                                         let ty = self.resolve_vars_if_possible(&ty);
                                         if ty == predicate.self_ty() {
-                                            error.obligation.cause.make_mut().span = hir_ty.span;
+                                            error.obligation.cause.make_mut().span_source =
+                                                SpanSource::Span(hir_ty.span);
                                         }
                                     }
                                 }

@@ -573,7 +573,12 @@ impl<'tcx> RegionConstraintCollector<'_, 'tcx> {
 
         match (sub, sup) {
             (&ReLateBound(..), _) | (_, &ReLateBound(..)) => {
-                span_bug!(origin.span(), "cannot relate bound region: {:?} <= {:?}", sub, sup);
+                span_source_bug!(
+                    origin.span_source(),
+                    "cannot relate bound region: {:?} <= {:?}",
+                    sub,
+                    sup,
+                );
             }
             (_, &ReStatic) => {
                 // all regions are subregions of static, so we can ignore this
@@ -673,7 +678,7 @@ impl<'tcx> RegionConstraintCollector<'_, 'tcx> {
         let a_universe = self.universe(a);
         let b_universe = self.universe(b);
         let c_universe = cmp::max(a_universe, b_universe);
-        let c = self.new_region_var(c_universe, MiscVariable(origin.span()));
+        let c = self.new_region_var(c_universe, MiscVariable(origin.span_source()));
         self.combine_map(t).insert(vars, c);
         self.undo_log.push(AddCombination(t, vars));
         let new_r = tcx.mk_region(ReVar(c));

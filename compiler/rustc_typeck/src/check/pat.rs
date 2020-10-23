@@ -10,6 +10,7 @@ use rustc_hir::pat_util::EnumerateAndAdjustIterator;
 use rustc_hir::{HirId, Pat, PatKind};
 use rustc_infer::infer;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::GenericArg;
 use rustc_middle::ty::{self, Adt, BindingMode, Ty, TypeFoldable};
 use rustc_span::hygiene::DesugaringKind;
@@ -1059,7 +1060,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             GenericArg::from(self.next_ty_var(
                 // FIXME: `MiscVariable` for now -- obtaining the span and name information
                 // from all tuple elements isn't trivial.
-                TypeVariableOrigin { kind: TypeVariableOriginKind::TypeInference, span },
+                TypeVariableOrigin {
+                    kind: TypeVariableOriginKind::TypeInference,
+                    span_source: SpanSource::Span(span),
+                },
             ))
         });
         let element_tys = tcx.mk_substs(element_tys_iter);
@@ -1525,7 +1529,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // think any errors can be introduced by using `demand::eqtype`.
             let inner_ty = self.next_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::TypeInference,
-                span: inner.span,
+                span_source: SpanSource::Span(inner.span),
             });
             let box_ty = tcx.mk_box(inner_ty);
             self.demand_eqtype_pat(span, expected, box_ty, ti);
@@ -1562,7 +1566,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 _ => {
                     let inner_ty = self.next_ty_var(TypeVariableOrigin {
                         kind: TypeVariableOriginKind::TypeInference,
-                        span: inner.span,
+                        span_source: SpanSource::Span(inner.span),
                     });
                     let rptr_ty = self.new_ref_ty(pat.span, mutbl, inner_ty);
                     debug!("check_pat_ref: demanding {:?} = {:?}", expected, rptr_ty);
@@ -1587,7 +1591,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     /// Create a reference type with a fresh region variable.
     fn new_ref_ty(&self, span: Span, mutbl: hir::Mutability, ty: Ty<'tcx>) -> Ty<'tcx> {
-        let region = self.next_region_var(infer::PatternRegion(span));
+        let region = self.next_region_var(infer::PatternRegion(SpanSource::Span(span)));
         let mt = ty::TypeAndMut { ty, mutbl };
         self.tcx.mk_ref(region, mt)
     }

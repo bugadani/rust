@@ -25,6 +25,7 @@ use crate::infer::combine::ConstEquateRelation;
 use crate::infer::InferCtxt;
 use crate::infer::{ConstVarValue, ConstVariableValue};
 use rustc_data_structures::fx::FxHashMap;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::fold::{TypeFoldable, TypeVisitor};
 use rustc_middle::ty::relate::{self, Relate, RelateResult, TypeRelation};
@@ -256,13 +257,12 @@ where
         value_ty: Ty<'tcx>,
     ) -> Ty<'tcx> {
         use crate::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
-        use rustc_span::DUMMY_SP;
 
         match *value_ty.kind() {
             ty::Projection(other_projection_ty) => {
                 let var = self.infcx.next_ty_var(TypeVariableOrigin {
                     kind: TypeVariableOriginKind::MiscVariable,
-                    span: DUMMY_SP,
+                    span_source: SpanSource::DUMMY,
                 });
                 self.relate_projection_ty(projection_ty, var);
                 self.relate_projection_ty(other_projection_ty, var);

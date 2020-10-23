@@ -24,6 +24,7 @@
 use crate::infer::{ConstVariableOrigin, ConstVariableOriginKind};
 use crate::infer::{InferCtxt, RegionVariableOrigin, TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_index::vec::IndexVec;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::subst::GenericArg;
 use rustc_middle::ty::{self, BoundVar, List};
@@ -68,8 +69,11 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
             .chain((0..canonical.max_universe.as_u32()).map(|_| self.create_next_universe()))
             .collect();
 
-        let canonical_inference_vars =
-            self.instantiate_canonical_vars(span, canonical.variables, |ui| universes[ui]);
+        let canonical_inference_vars = self.instantiate_canonical_vars(
+            SpanSource::Span(span),
+            canonical.variables,
+            |ui| universes[ui],
+        );
         let result = canonical.substitute(self.tcx, &canonical_inference_vars);
         (result, canonical_inference_vars)
     }
@@ -81,13 +85,13 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
     /// canonical variable with these inference variables.
     fn instantiate_canonical_vars(
         &self,
-        span: Span,
+        span_source: SpanSource,
         variables: &List<CanonicalVarInfo>,
         universe_map: impl Fn(ty::UniverseIndex) -> ty::UniverseIndex,
     ) -> CanonicalVarValues<'tcx> {
         let var_values: IndexVec<BoundVar, GenericArg<'tcx>> = variables
             .iter()
-            .map(|info| self.instantiate_canonical_var(span, info, &universe_map))
+            .map(|info| self.instantiate_canonical_var(span_source, info, &universe_map))
             .collect();
 
         CanonicalVarValues { var_values }
@@ -99,7 +103,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
     /// universally quantified variable, you get a placeholder.
     fn instantiate_canonical_var(
         &self,
-        span: Span,
+        span_source: SpanSource,
         cv_info: CanonicalVarInfo,
         universe_map: impl Fn(ty::UniverseIndex) -> ty::UniverseIndex,
     ) -> GenericArg<'tcx> {
@@ -107,7 +111,10 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
             CanonicalVarKind::Ty(ty_kind) => {
                 let ty = match ty_kind {
                     CanonicalTyVarKind::General(ui) => self.next_ty_var_in_universe(
-                        TypeVariableOrigin { kind: TypeVariableOriginKind::MiscVariable, span },
+                        TypeVariableOrigin {
+                            kind: TypeVariableOriginKind::MiscVariable,
+                            span_source,
+                        },
                         universe_map(ui),
                     ),
 
@@ -126,7 +133,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
 
             CanonicalVarKind::Region(ui) => self
                 .next_region_var_in_universe(
-                    RegionVariableOrigin::MiscVariable(span),
+                    RegionVariableOrigin::MiscVariable(span_source),
                     universe_map(ui),
                 )
                 .into(),
@@ -140,10 +147,16 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
             CanonicalVarKind::Const(ui) => self
                 .next_const_var_in_universe(
                     self.next_ty_var_in_universe(
-                        TypeVariableOrigin { kind: TypeVariableOriginKind::MiscVariable, span },
+                        TypeVariableOrigin {
+                            kind: TypeVariableOriginKind::MiscVariable,
+                            span_source,
+                        },
                         universe_map(ui),
                     ),
-                    ConstVariableOrigin { kind: ConstVariableOriginKind::MiscVariable, span },
+                    ConstVariableOrigin {
+                        kind: ConstVariableOriginKind::MiscVariable,
+                        span_source,
+                    },
                     universe_map(ui),
                 )
                 .into(),

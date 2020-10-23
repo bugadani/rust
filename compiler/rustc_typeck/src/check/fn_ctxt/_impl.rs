@@ -28,7 +28,7 @@ use rustc_middle::ty::{
 };
 use rustc_session::lint;
 use rustc_span::hygiene::DesugaringKind;
-use rustc_span::source_map::{original_sp, DUMMY_SP};
+use rustc_span::source_map::original_sp;
 use rustc_span::symbol::{kw, sym, Ident};
 use rustc_span::{self, BytePos, MultiSpan, Span};
 use rustc_trait_selection::infer::InferCtxtExt as _;
@@ -185,7 +185,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         substs: InternalSubsts::for_item(self.tcx, method.def_id, |param, _| {
                             let i = param.index as usize;
                             if i < method_generics.parent_count {
-                                self.infcx.var_for_def(DUMMY_SP, param)
+                                self.infcx.var_for_def(SpanSource::DUMMY, param)
                             } else {
                                 method.substs[i]
                             }
@@ -412,7 +412,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         code: traits::ObligationCauseCode<'tcx>,
         def_id: DefId,
     ) {
-        self.register_bound(ty, def_id, traits::ObligationCause::new(span, self.body_id, code));
+        self.register_bound(
+            ty,
+            def_id,
+            traits::ObligationCause::new(SpanSource::Span(span), self.body_id, code),
+        );
     }
 
     pub fn require_type_is_sized(
@@ -540,7 +544,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         code: traits::ObligationCauseCode<'tcx>,
     ) {
         // WF obligations never themselves fail, so no real need to give a detailed cause:
-        let cause = traits::ObligationCause::new(span, self.body_id, code);
+        let cause = traits::ObligationCause::new(SpanSource::Span(span), self.body_id, code);
         self.register_predicate(traits::Obligation::new(
             cause,
             self.param_env,
@@ -873,7 +877,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         } else {
             self.tcx.type_of(def_id)
         };
-        let substs = self.infcx.fresh_substs_for_item(span, def_id);
+        let substs = self.infcx.fresh_substs_for_item(SpanSource::Span(span), def_id);
         let ty = item_ty.subst(self.tcx, substs);
 
         self.write_resolution(hir_id, Ok((def_kind, def_id)));
@@ -1313,13 +1317,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 // This case also occurs as a result of some malformed input, e.g.
                                 // a lifetime argument being given instead of a type parameter.
                                 // Using inference instead of `Error` gives better error messages.
-                                self.var_for_def(span, param)
+                                self.var_for_def(SpanSource::Span(span), param)
                             }
                         }
                         GenericParamDefKind::Const => {
                             // FIXME(const_generics:defaults)
                             // No const parameters were provided, we have to infer them.
-                            self.var_for_def(span, param)
+                            self.var_for_def(SpanSource::Span(span), param)
                         }
                     }
                 },
@@ -1374,7 +1378,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let (bounds, spans) = self.instantiate_bounds(span, def_id, &substs);
 
         for (i, mut obligation) in traits::predicates_for_generics(
-            traits::ObligationCause::new(span, self.body_id, traits::ItemObligation(def_id)),
+            traits::ObligationCause::new(
+                SpanSource::Span(span),
+                self.body_id,
+                traits::ItemObligation(def_id),
+            ),
             self.param_env,
             bounds,
         )
@@ -1434,12 +1442,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// good ObligationCause.
     pub(in super::super) fn probe_instantiate_query_response(
         &self,
-        span: Span,
+        span_source: SpanSource,
         original_values: &OriginalQueryValues<'tcx>,
         query_result: &Canonical<'tcx, QueryResponse<'tcx, Ty<'tcx>>>,
     ) -> InferResult<'tcx, Ty<'tcx>> {
         self.instantiate_query_response_and_region_obligations(
-            &traits::ObligationCause::misc(span, self.body_id),
+            &traits::ObligationCause::new(
+                span_source,
+                self.body_id,
+                ObligationCauseCode::MiscObligation,
+            ),
             self.param_env,
             original_values,
             query_result,

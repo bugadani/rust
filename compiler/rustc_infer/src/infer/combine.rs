@@ -37,13 +37,13 @@ use crate::traits::{Obligation, PredicateObligations};
 use rustc_ast as ast;
 use rustc_data_structures::sso::SsoHashMap;
 use rustc_hir::def_id::DefId;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::traits::ObligationCause;
 use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::relate::{self, Relate, RelateResult, TypeRelation};
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{self, InferConst, ToPredicate, Ty, TyCtxt, TypeFoldable};
 use rustc_middle::ty::{IntType, UintType};
-use rustc_span::{Span, DUMMY_SP};
 
 #[derive(Clone)]
 pub struct CombineFields<'infcx, 'tcx> {
@@ -229,7 +229,7 @@ impl<'infcx, 'tcx> InferCtxt<'infcx, 'tcx> {
         ct: &'tcx ty::Const<'tcx>,
         vid_is_expected: bool,
     ) -> RelateResult<'tcx, &'tcx ty::Const<'tcx>> {
-        let (for_universe, span) = {
+        let (for_universe, span_source) = {
             let mut inner = self.inner.borrow_mut();
             let variable_table = &mut inner.const_unification_table();
             let var_value = variable_table.probe_value(target_vid);
@@ -237,11 +237,14 @@ impl<'infcx, 'tcx> InferCtxt<'infcx, 'tcx> {
                 ConstVariableValue::Known { value } => {
                     bug!("instantiating {:?} which has a known value {:?}", target_vid, value)
                 }
-                ConstVariableValue::Unknown { universe } => (universe, var_value.origin.span),
+                ConstVariableValue::Unknown { universe } => {
+                    (universe, var_value.origin.span_source)
+                }
             }
         };
-        let value = ConstInferUnifier { infcx: self, span, param_env, for_universe, target_vid }
-            .relate(ct, ct)?;
+        let value =
+            ConstInferUnifier { infcx: self, span_source, param_env, for_universe, target_vid }
+                .relate(ct, ct)?;
 
         self.inner
             .borrow_mut()
@@ -251,7 +254,7 @@ impl<'infcx, 'tcx> InferCtxt<'infcx, 'tcx> {
                 ConstVarValue {
                     origin: ConstVariableOrigin {
                         kind: ConstVariableOriginKind::ConstInference,
-                        span: DUMMY_SP,
+                        span_source: SpanSource::DUMMY,
                     },
                     val: ConstVariableValue::Known { value },
                 },
@@ -700,7 +703,9 @@ impl TypeRelation<'tcx> for Generalizer<'_, 'tcx> {
 
         // FIXME: This is non-ideal because we don't give a
         // very descriptive origin for this region variable.
-        Ok(self.infcx.next_region_var_in_universe(MiscVariable(self.cause.span), self.for_universe))
+        Ok(self
+            .infcx
+            .next_region_var_in_universe(MiscVariable(self.cause.span_source), self.for_universe))
     }
 
     fn consts(
@@ -783,7 +788,7 @@ fn float_unification_error<'tcx>(
 struct ConstInferUnifier<'cx, 'tcx> {
     infcx: &'cx InferCtxt<'cx, 'tcx>,
 
-    span: Span,
+    span_source: SpanSource,
 
     param_env: ty::ParamEnv<'tcx>,
 
@@ -905,7 +910,9 @@ impl TypeRelation<'tcx> for ConstInferUnifier<'_, 'tcx> {
         } else {
             // FIXME: This is non-ideal because we don't give a
             // very descriptive origin for this region variable.
-            Ok(self.infcx.next_region_var_in_universe(MiscVariable(self.span), self.for_universe))
+            Ok(self
+                .infcx
+                .next_region_var_in_universe(MiscVariable(self.span_source), self.for_universe))
         }
     }
 

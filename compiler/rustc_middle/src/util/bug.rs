@@ -1,5 +1,6 @@
 // These functions are used by macro expansion for bug! and span_bug!
 
+use crate::middle::lang_items::SpanSource;
 use crate::ty::{tls, TyCtxt};
 use rustc_span::{MultiSpan, Span};
 use std::fmt;
@@ -19,6 +20,28 @@ pub fn bug_fmt(args: fmt::Arguments<'_>) -> ! {
 #[track_caller]
 pub fn span_bug_fmt<S: Into<MultiSpan>>(span: S, args: fmt::Arguments<'_>) -> ! {
     opt_span_bug_fmt(Some(span), args, Location::caller());
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+pub fn span_source_bug_fmt(span: SpanSource, args: fmt::Arguments<'_>) -> ! {
+    opt_span_source_bug_fmt(span, args, Location::caller());
+}
+
+fn opt_span_source_bug_fmt(
+    span_source: SpanSource,
+    args: fmt::Arguments<'_>,
+    location: &Location<'_>,
+) -> ! {
+    tls::with_opt(move |tcx| {
+        let msg = format!("{}: {}", location, args);
+        match tcx {
+            Some(tcx) => tcx.sess.diagnostic().span_bug(span_source.to_span(tcx), &msg),
+            None => panic!(msg),
+        }
+    });
+    unreachable!();
 }
 
 fn opt_span_bug_fmt<S: Into<MultiSpan>>(

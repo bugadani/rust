@@ -9,6 +9,7 @@ use rustc_infer::infer::error_reporting::unexpected_hidden_region_diagnostic;
 use rustc_infer::infer::free_regions::FreeRegionRelations;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_infer::infer::{self, InferCtxt, InferOk};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::{BottomUpFolder, TypeFoldable, TypeFolder, TypeVisitor};
 use rustc_middle::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, Subst, SubstsRef};
 use rustc_middle::ty::{self, Ty, TyCtxt};
@@ -424,8 +425,6 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
             hir::OpaqueTyOrigin::Binding | hir::OpaqueTyOrigin::Misc => 0,
         };
 
-        let span = tcx.def_span(def_id);
-
         // If there are required region bounds, we can use them.
         if opaque_defn.has_required_region_bounds {
             let bounds = tcx.explicit_item_bounds(def_id);
@@ -441,7 +440,13 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
 
             for required_region in required_region_bounds {
                 concrete_ty.visit_with(&mut ConstrainOpaqueTypeRegionVisitor {
-                    op: |r| self.sub_regions(infer::CallReturn(span), required_region, r),
+                    op: |r| {
+                        self.sub_regions(
+                            infer::CallReturn(SpanSource::DefId(def_id)),
+                            required_region,
+                            r,
+                        )
+                    },
                 });
             }
             if let GenerateMemberConstraints::IfNoStaticBound = mode {
@@ -509,7 +514,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
             }
         }
         concrete_ty.visit_with(&mut ConstrainOpaqueTypeRegionVisitor {
-            op: |r| self.sub_regions(infer::CallReturn(span), least_region, r),
+            op: |r| self.sub_regions(infer::CallReturn(SpanSource::DefId(def_id)), least_region, r),
         });
     }
 
@@ -1114,8 +1119,10 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
         }
         let span = tcx.def_span(def_id);
         debug!("fold_opaque_ty {:?} {:?}", self.value_span, span);
-        let ty_var = infcx
-            .next_ty_var(TypeVariableOrigin { kind: TypeVariableOriginKind::TypeInference, span });
+        let ty_var = infcx.next_ty_var(TypeVariableOrigin {
+            kind: TypeVariableOriginKind::TypeInference,
+            span_source: SpanSource::DefId(def_id),
+        });
 
         let item_bounds = tcx.explicit_item_bounds(def_id);
         debug!("instantiate_opaque_types: bounds={:#?}", item_bounds);
@@ -1174,7 +1181,11 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
             // This also instantiates nested instances of `impl Trait`.
             let predicate = self.instantiate_opaque_types_in_map(&predicate);
 
-            let cause = traits::ObligationCause::new(span, self.body_id, traits::MiscObligation);
+            let cause = traits::ObligationCause::new(
+                SpanSource::DefId(def_id),
+                self.body_id,
+                traits::MiscObligation,
+            );
 
             // Require that the predicate holds for the concrete type.
             debug!("instantiate_opaque_types: predicate={:?}", predicate);

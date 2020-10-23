@@ -378,19 +378,25 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             ty::Dynamic(data, ..) => {
                 self.infcx
                     .replace_bound_vars_with_fresh_vars(
-                        obligation.cause.span,
+                        obligation.cause.span_source,
                         HigherRankedType,
                         data,
                     )
                     .0
             }
-            _ => span_bug!(obligation.cause.span, "object candidate with non-object"),
+            _ => span_bug!(
+                obligation.cause.span_source.to_span(tcx),
+                "object candidate with non-object"
+            ),
         };
 
         let object_trait_ref = data
             .principal()
             .unwrap_or_else(|| {
-                span_bug!(obligation.cause.span, "object candidate with no principal")
+                span_bug!(
+                    obligation.cause.span_source.to_span(tcx),
+                    "object candidate with no principal"
+                )
             })
             .with_self_ty(self.tcx(), self_ty);
 
@@ -466,7 +472,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 // FIXME(generic_associated_types) generate placeholders to
                 // extend the trait substs.
                 tcx.sess.span_fatal(
-                    obligation.cause.span,
+                    obligation.cause.span_source.to_span(tcx),
                     "generic associated types in trait objects are not supported yet",
                 );
             }
@@ -734,7 +740,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
                 // Register one obligation for 'a: 'b.
                 let cause = ObligationCause::new(
-                    obligation.cause.span,
+                    obligation.cause.span_source,
                     obligation.cause.body_id,
                     ObjectCastObligation(target),
                 );
@@ -755,7 +761,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 }
 
                 let cause = ObligationCause::new(
-                    obligation.cause.span,
+                    obligation.cause.span_source,
                     obligation.cause.body_id,
                     ObjectCastObligation(target),
                 );

@@ -19,6 +19,7 @@ use rustc_infer::infer::canonical::{Canonical, QueryResponse};
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_infer::infer::unify_key::{ConstVariableOrigin, ConstVariableOriginKind};
 use rustc_infer::infer::{self, InferOk, TyCtxtInferExt};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::stability;
 use rustc_middle::ty::subst::{InternalSubsts, Subst, SubstsRef};
 use rustc_middle::ty::GenericParamDefKind;
@@ -359,7 +360,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     .unwrap_or_else(|| span_bug!(span, "reached the recursion limit in 0 steps?"))
                     .self_ty;
                 let ty = self
-                    .probe_instantiate_query_response(span, &orig_values, ty)
+                    .probe_instantiate_query_response(SpanSource::Span(span), &orig_values, ty)
                     .unwrap_or_else(|_| span_bug!(span, "instantiating {:?} failed?", ty));
                 autoderef::report_autoderef_recursion_limit_error(self.tcx, span, ty.value);
             });
@@ -391,7 +392,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // to it.
                 let ty = &bad_ty.ty;
                 let ty = self
-                    .probe_instantiate_query_response(span, &orig_values, ty)
+                    .probe_instantiate_query_response(SpanSource::Span(span), &orig_values, ty)
                     .unwrap_or_else(|_| span_bug!(span, "instantiating {:?} failed?", ty));
                 let ty = self.structurally_resolved_type(span, ty.value);
                 assert!(matches!(ty.kind(), ty::Error(_)));
@@ -909,10 +910,14 @@ impl<'a, 'tcx> ProbeContext<'a, 'tcx> {
             ty::AssocKind::Fn => {
                 let fty = self.tcx.fn_sig(method.def_id);
                 self.probe(|_| {
-                    let substs = self.fresh_substs_for_item(self.span, method.def_id);
+                    let substs =
+                        self.fresh_substs_for_item(SpanSource::Span(self.span), method.def_id);
                     let fty = fty.subst(self.tcx, substs);
-                    let (fty, _) =
-                        self.replace_bound_vars_with_fresh_vars(self.span, infer::FnCall, &fty);
+                    let (fty, _) = self.replace_bound_vars_with_fresh_vars(
+                        SpanSource::Span(self.span),
+                        infer::FnCall,
+                        &fty,
+                    );
 
                     if let Some(self_ty) = self_ty {
                         if self
@@ -1083,7 +1088,7 @@ impl<'a, 'tcx> ProbeContext<'a, 'tcx> {
                 let InferOk { value: self_ty, obligations: _ } = self
                     .fcx
                     .probe_instantiate_query_response(
-                        self.span,
+                        SpanSource::Span(self.span),
                         &self.orig_steps_var_values,
                         &step.self_ty,
                     )
@@ -1621,7 +1626,7 @@ impl<'a, 'tcx> ProbeContext<'a, 'tcx> {
                             self.tcx.lifetimes.re_erased.into()
                         }
                         GenericParamDefKind::Type { .. } | GenericParamDefKind::Const => {
-                            self.var_for_def(self.span, param)
+                            self.var_for_def(SpanSource::Span(self.span), param)
                         }
                     }
                 }
@@ -1641,14 +1646,13 @@ impl<'a, 'tcx> ProbeContext<'a, 'tcx> {
             GenericParamDefKind::Type { .. } => self
                 .next_ty_var(TypeVariableOrigin {
                     kind: TypeVariableOriginKind::SubstitutionPlaceholder,
-                    span: self.tcx.def_span(def_id),
+                    span_source: SpanSource::DefId(def_id),
                 })
                 .into(),
             GenericParamDefKind::Const { .. } => {
-                let span = self.tcx.def_span(def_id);
                 let origin = ConstVariableOrigin {
                     kind: ConstVariableOriginKind::SubstitutionPlaceholder,
-                    span,
+                    span_source: SpanSource::DefId(def_id),
                 };
                 self.next_const_var(self.tcx.type_of(param.def_id), origin).into()
             }

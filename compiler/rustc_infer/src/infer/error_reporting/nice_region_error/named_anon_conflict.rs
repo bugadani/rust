@@ -10,7 +10,7 @@ impl<'a, 'tcx> NiceRegionError<'a, 'tcx> {
     /// When given a `ConcreteFailure` for a function with parameters containing a named region and
     /// an anonymous region, emit an descriptive diagnostic error.
     pub(super) fn try_report_named_anon_conflict(&self) -> Option<DiagnosticBuilder<'a>> {
-        let (span, sub, sup) = self.regions()?;
+        let (span_source, sub, sup) = self.regions()?;
 
         debug!(
             "try_report_named_anon_conflict(sub={:?}, sup={:?}, error={:?})",
@@ -104,6 +104,7 @@ impl<'a, 'tcx> NiceRegionError<'a, 'tcx> {
             None => ("parameter type".to_owned(), "type".to_owned()),
         };
 
+        let span = span_source.to_span(self.tcx());
         let mut diag = struct_span_err!(
             self.tcx().sess,
             span,

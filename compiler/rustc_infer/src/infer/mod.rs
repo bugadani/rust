@@ -20,6 +20,7 @@ use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_middle::infer::canonical::{Canonical, CanonicalVarValues};
 use rustc_middle::infer::unify_key::{ConstVarValue, ConstVariableValue};
 use rustc_middle::infer::unify_key::{ConstVariableOrigin, ConstVariableOriginKind, ToType};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::EvalToConstValueResult;
 use rustc_middle::traits::select;
@@ -374,35 +375,35 @@ pub enum SubregionOrigin<'tcx> {
 
     /// When casting `&'a T` to an `&'b Trait` object,
     /// relating `'a` to `'b`
-    RelateObjectBound(Span),
+    RelateObjectBound(SpanSource),
 
     /// Some type parameter was instantiated with the given type,
     /// and that type must outlive some region.
-    RelateParamBound(Span, Ty<'tcx>),
+    RelateParamBound(SpanSource, Ty<'tcx>),
 
     /// The given region parameter was instantiated with a region
     /// that must outlive some other region.
-    RelateRegionParamBound(Span),
+    RelateRegionParamBound(SpanSource),
 
     /// Creating a pointer `b` to contents of another reference
-    Reborrow(Span),
+    Reborrow(SpanSource),
 
     /// Creating a pointer `b` to contents of an upvar
-    ReborrowUpvar(Span, ty::UpvarId),
+    ReborrowUpvar(SpanSource, ty::UpvarId),
 
     /// Data with type `Ty<'tcx>` was borrowed
-    DataBorrowed(Ty<'tcx>, Span),
+    DataBorrowed(Ty<'tcx>, SpanSource),
 
     /// (&'a &'b T) where a >= b
-    ReferenceOutlivesReferent(Ty<'tcx>, Span),
+    ReferenceOutlivesReferent(Ty<'tcx>, SpanSource),
 
     /// Region in return type of invoked fn must enclose call
-    CallReturn(Span),
+    CallReturn(SpanSource),
 
     /// Comparing the signature and requirements of an impl method against
     /// the containing trait.
     CompareImplMethodObligation {
-        span: Span,
+        span_source: SpanSource,
         item_name: Symbol,
         impl_item_def_id: DefId,
         trait_item_def_id: DefId,
@@ -411,7 +412,7 @@ pub enum SubregionOrigin<'tcx> {
 
 // `SubregionOrigin` is used a lot. Make sure it doesn't unintentionally get bigger.
 #[cfg(target_arch = "x86_64")]
-static_assert_size!(SubregionOrigin<'_>, 32);
+static_assert_size!(SubregionOrigin<'_>, 40); // FIXME avoid increasing
 
 /// Times when we replace late-bound regions with variables:
 #[derive(Clone, Copy, Debug)]
@@ -433,28 +434,28 @@ pub enum LateBoundRegionConversionTime {
 pub enum RegionVariableOrigin {
     /// Region variables created for ill-categorized reasons,
     /// mostly indicates places in need of refactoring
-    MiscVariable(Span),
+    MiscVariable(SpanSource),
 
     /// Regions created by a `&P` or `[...]` pattern
-    PatternRegion(Span),
+    PatternRegion(SpanSource),
 
     /// Regions created by `&` operator
-    AddrOfRegion(Span),
+    AddrOfRegion(SpanSource),
 
     /// Regions created as part of an autoref of a method receiver
-    Autoref(Span, ty::AssocItem),
+    Autoref(SpanSource, ty::AssocItem),
 
     /// Regions created as part of an automatic coercion
-    Coercion(Span),
+    Coercion(SpanSource),
 
     /// Region variables created as the values for early-bound regions
-    EarlyBoundRegion(Span, Symbol),
+    EarlyBoundRegion(SpanSource, Symbol),
 
     /// Region variables created for bound regions
     /// in a function or method that is called
-    LateBoundRegion(Span, ty::BoundRegion, LateBoundRegionConversionTime),
+    LateBoundRegion(SpanSource, ty::BoundRegion, LateBoundRegionConversionTime),
 
-    UpvarRegion(ty::UpvarId, Span),
+    UpvarRegion(ty::UpvarId, SpanSource),
 
     BoundRegionInCoherence(Symbol),
 
@@ -974,7 +975,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             let ty::OutlivesPredicate(r_a, r_b) =
                 self.replace_bound_vars_with_placeholders(&predicate);
             let origin = SubregionOrigin::from_obligation_cause(cause, || {
-                RelateRegionParamBound(cause.span)
+                RelateRegionParamBound(cause.span_source)
             });
             self.sub_regions(origin, r_b, r_a); // `b : a` ==> `a <= b`
             Ok(())
@@ -1095,12 +1096,16 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         self.next_region_var_in_universe(RegionVariableOrigin::NLL(origin), universe)
     }
 
-    pub fn var_for_def(&self, span: Span, param: &ty::GenericParamDef) -> GenericArg<'tcx> {
+    pub fn var_for_def(
+        &self,
+        span_source: SpanSource,
+        param: &ty::GenericParamDef,
+    ) -> GenericArg<'tcx> {
         match param.kind {
             GenericParamDefKind::Lifetime => {
                 // Create a region inference variable for the given
                 // region parameter definition.
-                self.next_region_var(EarlyBoundRegion(span, param.name)).into()
+                self.next_region_var(EarlyBoundRegion(span_source, param.name)).into()
             }
             GenericParamDefKind::Type { .. } => {
                 // Create a type inference variable for the given
@@ -1119,7 +1124,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                             param.name,
                             Some(param.def_id),
                         ),
-                        span,
+                        span_source,
                     },
                 );
 
@@ -1131,7 +1136,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                         param.name,
                         param.def_id,
                     ),
-                    span,
+                    span_source,
                 };
                 let const_var_id =
                     self.inner.borrow_mut().const_unification_table().new_key(ConstVarValue {
@@ -1145,8 +1150,8 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
     /// Given a set of generics defined on a type or impl, returns a substitution mapping each
     /// type/region parameter to a fresh inference variable.
-    pub fn fresh_substs_for_item(&self, span: Span, def_id: DefId) -> SubstsRef<'tcx> {
-        InternalSubsts::for_item(self.tcx, def_id, |param, _| self.var_for_def(span, param))
+    pub fn fresh_substs_for_item(&self, span_source: SpanSource, def_id: DefId) -> SubstsRef<'tcx> {
+        InternalSubsts::for_item(self.tcx, def_id, |param, _| self.var_for_def(span_source, param))
     }
 
     /// Returns `true` if errors have been reported since this infcx was
@@ -1420,24 +1425,24 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
     pub fn replace_bound_vars_with_fresh_vars<T>(
         &self,
-        span: Span,
+        span_source: SpanSource,
         lbrct: LateBoundRegionConversionTime,
         value: &ty::Binder<T>,
     ) -> (T, BTreeMap<ty::BoundRegion, ty::Region<'tcx>>)
     where
         T: TypeFoldable<'tcx>,
     {
-        let fld_r = |br| self.next_region_var(LateBoundRegion(span, br, lbrct));
+        let fld_r = |br| self.next_region_var(LateBoundRegion(span_source, br, lbrct));
         let fld_t = |_| {
             self.next_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::MiscVariable,
-                span,
+                span_source,
             })
         };
         let fld_c = |_, ty| {
             self.next_const_var(
                 ty,
-                ConstVariableOrigin { kind: ConstVariableOriginKind::MiscVariable, span },
+                ConstVariableOrigin { kind: ConstVariableOriginKind::MiscVariable, span_source },
             )
         };
         self.tcx.replace_bound_vars(value, fld_r, fld_t, fld_c)
@@ -1691,8 +1696,8 @@ impl<'a, 'tcx> TypeFolder<'tcx> for ShallowResolver<'a, 'tcx> {
 }
 
 impl<'tcx> TypeTrace<'tcx> {
-    pub fn span(&self) -> Span {
-        self.cause.span
+    pub fn span_source(&self) -> SpanSource {
+        self.cause.span_source
     }
 
     pub fn types(
@@ -1723,9 +1728,9 @@ impl<'tcx> TypeTrace<'tcx> {
 }
 
 impl<'tcx> SubregionOrigin<'tcx> {
-    pub fn span(&self) -> Span {
+    pub fn span_source(&self) -> SpanSource {
         match *self {
-            Subtype(ref a) => a.span(),
+            Subtype(ref a) => a.span_source(),
             RelateObjectBound(a) => a,
             RelateParamBound(a, _) => a,
             RelateRegionParamBound(a) => a,
@@ -1734,7 +1739,7 @@ impl<'tcx> SubregionOrigin<'tcx> {
             DataBorrowed(_, a) => a,
             ReferenceOutlivesReferent(_, a) => a,
             CallReturn(a) => a,
-            CompareImplMethodObligation { span, .. } => span,
+            CompareImplMethodObligation { span_source, .. } => span_source,
         }
     }
 
@@ -1744,7 +1749,7 @@ impl<'tcx> SubregionOrigin<'tcx> {
     {
         match cause.code {
             traits::ObligationCauseCode::ReferenceOutlivesReferent(ref_type) => {
-                SubregionOrigin::ReferenceOutlivesReferent(ref_type, cause.span)
+                SubregionOrigin::ReferenceOutlivesReferent(ref_type, cause.span_source)
             }
 
             traits::ObligationCauseCode::CompareImplMethodObligation {
@@ -1752,7 +1757,7 @@ impl<'tcx> SubregionOrigin<'tcx> {
                 impl_item_def_id,
                 trait_item_def_id,
             } => SubregionOrigin::CompareImplMethodObligation {
-                span: cause.span,
+                span_source: cause.span_source,
                 item_name,
                 impl_item_def_id,
                 trait_item_def_id,
@@ -1764,7 +1769,7 @@ impl<'tcx> SubregionOrigin<'tcx> {
 }
 
 impl RegionVariableOrigin {
-    pub fn span(&self) -> Span {
+    pub fn span_source(&self) -> SpanSource {
         match *self {
             MiscVariable(a)
             | PatternRegion(a)
@@ -1774,7 +1779,7 @@ impl RegionVariableOrigin {
             | EarlyBoundRegion(a, ..)
             | LateBoundRegion(a, ..)
             | UpvarRegion(_, a) => a,
-            BoundRegionInCoherence(_) => rustc_span::DUMMY_SP,
+            BoundRegionInCoherence(_) => SpanSource::DUMMY,
             NLL(..) => bug!("NLL variable used with `span`"),
         }
     }

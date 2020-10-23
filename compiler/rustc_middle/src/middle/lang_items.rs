@@ -12,6 +12,7 @@ use crate::ty::{self, TyCtxt};
 use rustc_hir::def_id::DefId;
 use rustc_hir::LangItem;
 use rustc_span::Span;
+use rustc_span::DUMMY_SP;
 use rustc_target::spec::PanicStrategy;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
@@ -21,6 +22,9 @@ pub enum SpanSource {
 }
 
 impl SpanSource {
+    pub const DUMMY: Self = SpanSource::Span(DUMMY_SP);
+
+    #[inline]
     pub fn to_span<'tcx>(self, tcx: TyCtxt<'tcx>) -> Span {
         match self {
             SpanSource::Span(span) => span,
@@ -28,6 +32,8 @@ impl SpanSource {
         }
     }
 }
+
+CloneTypeFoldableAndLiftImpls! { SpanSource, }
 
 impl<'tcx> TyCtxt<'tcx> {
     /// Returns the `DefId` for a given `LangItem`.

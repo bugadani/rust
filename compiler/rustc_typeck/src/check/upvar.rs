@@ -40,6 +40,7 @@ use rustc_hir::def_id::LocalDefId;
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_infer::infer::UpvarRegion;
 use rustc_middle::hir::place::{PlaceBase, PlaceWithHirId};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, Ty, TyCtxt, UpvarSubsts};
 use rustc_span::{Span, Symbol};
 use std::collections::hash_map::Entry;
@@ -127,7 +128,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let capture_kind = match capture_clause {
                     hir::CaptureBy::Value => ty::UpvarCapture::ByValue(None),
                     hir::CaptureBy::Ref => {
-                        let origin = UpvarRegion(upvar_id, span);
+                        let origin = UpvarRegion(upvar_id, SpanSource::Span(span));
                         let upvar_region = self.next_region_var(origin);
                         let upvar_borrow =
                             ty::UpvarBorrow { kind: ty::ImmBorrow, region: upvar_region };

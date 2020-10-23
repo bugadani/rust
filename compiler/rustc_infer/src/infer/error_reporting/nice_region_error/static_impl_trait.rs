@@ -47,7 +47,7 @@ impl<'a, 'tcx> NiceRegionError<'a, 'tcx> {
                     };
                     let mut err = struct_span_err!(
                         tcx.sess,
-                        cause.span,
+                        cause.span_source.to_span(tcx),
                         E0772,
                         "{} has {} but calling `{}` introduces an implicit `'static` lifetime \
                          requirement",
@@ -62,7 +62,7 @@ impl<'a, 'tcx> NiceRegionError<'a, 'tcx> {
                     );
                     err.span_label(param.param_ty_span, &format!("this data with {}...", lifetime));
                     err.span_label(
-                        cause.span,
+                        cause.span_source.to_span(tcx),
                         &format!(
                             "...is captured and required to live as long as `'static` here \
                              because of an implicit lifetime bound on the {}",
@@ -91,8 +91,8 @@ impl<'a, 'tcx> NiceRegionError<'a, 'tcx> {
         );
         let anon_reg_sup = tcx.is_suitable_region(sup_r)?;
         debug!("try_report_static_impl_trait: anon_reg_sup={:?}", anon_reg_sup);
-        let sp = var_origin.span();
-        let return_sp = sub_origin.span();
+        let sp = var_origin.span_source().to_span(tcx);
+        let return_sp = sub_origin.span_source().to_span(tcx);
         let param = self.find_param_with_region(sup_r, sub_r)?;
         let (lifetime_name, lifetime) = if sup_r.has_name() {
             (sup_r.to_string(), format!("lifetime `{}`", sup_r))
@@ -117,14 +117,13 @@ impl<'a, 'tcx> NiceRegionError<'a, 'tcx> {
         debug!("try_report_static_impl_trait: param_info={:?}", param);
 
         // We try to make the output have fewer overlapping spans if possible.
-        if (sp == sup_origin.span() || !return_sp.overlaps(sup_origin.span()))
-            && sup_origin.span() != return_sp
-        {
+        let span = sup_origin.span_source().to_span(tcx);
+        if (sp == span || !return_sp.overlaps(span)) && span != return_sp {
             // FIXME: account for `async fn` like in `async-await/issues/issue-62097.rs`
 
             // Customize the spans and labels depending on their relative order so
             // that split sentences flow correctly.
-            if sup_origin.span().overlaps(return_sp) && sp == sup_origin.span() {
+            if span.overlaps(return_sp) && sp == span {
                 // Avoid the following:
                 //
                 // error: cannot infer an appropriate lifetime
@@ -141,12 +140,12 @@ impl<'a, 'tcx> NiceRegionError<'a, 'tcx> {
                 // LL | fn foo(x: &i32) -> Box<dyn Debug> { Box::new(x) }
                 //    |           ----                               ^
                 err.span_label(
-                    sup_origin.span(),
+                    span,
                     "...is captured here, requiring it to live as long as `'static`",
                 );
             } else {
-                err.span_label(sup_origin.span(), "...is captured here...");
-                if return_sp < sup_origin.span() {
+                err.span_label(span, "...is captured here...");
+                if return_sp < span {
                     err.span_note(
                         return_sp,
                         "...and is required to live as long as `'static` here",

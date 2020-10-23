@@ -6,6 +6,7 @@ use rustc_hir::intravisit;
 use rustc_hir::{GenericParamKind, ImplItemKind, TraitItemKind};
 use rustc_infer::infer::{self, InferOk, TyCtxtInferExt};
 use rustc_infer::traits::util;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty;
 use rustc_middle::ty::error::{ExpectedFound, TypeError};
 use rustc_middle::ty::subst::{InternalSubsts, Subst};
@@ -83,7 +84,7 @@ fn compare_predicate_entailment<'tcx>(
 
     // We sometimes modify the span further down.
     let mut cause = ObligationCause::new(
-        impl_m_span,
+        SpanSource::Span(impl_m_span),
         impl_m_hir_id,
         ObligationCauseCode::CompareImplMethodObligation {
             item_name: impl_m.ident.name,
@@ -222,7 +223,7 @@ fn compare_predicate_entailment<'tcx>(
 
         let impl_m_own_bounds = impl_m_predicates.instantiate_own(tcx, impl_to_placeholder_substs);
         let (impl_m_own_bounds, _) = infcx.replace_bound_vars_with_fresh_vars(
-            impl_m_span,
+            SpanSource::Span(impl_m_span),
             infer::HigherRankedType,
             &ty::Binder::bind(impl_m_own_bounds.predicates),
         );
@@ -251,7 +252,7 @@ fn compare_predicate_entailment<'tcx>(
         let tcx = infcx.tcx;
 
         let (impl_sig, _) = infcx.replace_bound_vars_with_fresh_vars(
-            impl_m_span,
+            SpanSource::Span(impl_m_span),
             infer::HigherRankedType,
             &tcx.fn_sig(impl_m.def_id),
         );
@@ -281,7 +282,7 @@ fn compare_predicate_entailment<'tcx>(
                 &infcx, param_env, &terr, &cause, impl_m, impl_sig, trait_m, trait_sig,
             );
 
-            cause.make_mut().span = impl_err_span;
+            cause.make_mut().span_source = SpanSource::Span(impl_err_span);
 
             let mut diag = struct_span_err!(
                 tcx.sess,
@@ -961,7 +962,7 @@ crate fn compare_const_impl<'tcx>(
         let impl_ty = tcx.type_of(impl_c.def_id);
         let trait_ty = tcx.type_of(trait_c.def_id).subst(tcx, trait_to_impl_substs);
         let mut cause = ObligationCause::new(
-            impl_c_span,
+            SpanSource::Span(impl_c_span),
             impl_c_hir_id,
             ObligationCauseCode::CompareImplConstObligation,
         );
@@ -990,13 +991,15 @@ crate fn compare_const_impl<'tcx>(
 
             // Locate the Span containing just the type of the offending impl
             match tcx.hir().expect_impl_item(impl_c_hir_id).kind {
-                ImplItemKind::Const(ref ty, _) => cause.make_mut().span = ty.span,
+                ImplItemKind::Const(ref ty, _) => {
+                    cause.make_mut().span_source = SpanSource::Span(ty.span)
+                }
                 _ => bug!("{:?} is not a impl const", impl_c),
             }
 
             let mut diag = struct_span_err!(
                 tcx.sess,
-                cause.span,
+                cause.span_source.to_span(tcx),
                 E0326,
                 "implemented const `{}` has an incompatible type for \
                                              trait",
@@ -1096,7 +1099,7 @@ fn compare_type_predicate_entailment<'tcx>(
     // `regionck_item` expects.
     let impl_ty_hir_id = tcx.hir().local_def_id_to_hir_id(impl_ty.def_id.expect_local());
     let cause = ObligationCause::new(
-        impl_ty_span,
+        SpanSource::Span(impl_ty_span),
         impl_ty_hir_id,
         ObligationCauseCode::CompareImplTypeObligation {
             item_name: impl_ty.ident.name,
@@ -1238,7 +1241,7 @@ pub fn check_type_bounds<'tcx>(
         let normalize_cause = traits::ObligationCause::misc(impl_ty_span, impl_ty_hir_id);
         let mk_cause = |span| {
             ObligationCause::new(
-                impl_ty_span,
+                SpanSource::Span(impl_ty_span),
                 impl_ty_hir_id,
                 ObligationCauseCode::BindingObligation(trait_ty.def_id, span),
             )

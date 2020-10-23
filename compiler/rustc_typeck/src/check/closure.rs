@@ -84,7 +84,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let tupled_upvars_ty = self.infcx.next_ty_var(TypeVariableOrigin {
             kind: TypeVariableOriginKind::ClosureSynthetic,
-            span: self.tcx.hir().span(expr.hir_id),
+            span_source: SpanSource::DefId(expr_def_id.to_def_id()),
         });
 
         if let Some(GeneratorTypes { resume_ty, yield_ty, interior, movability }) = generator_types
@@ -133,7 +133,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             None => self.infcx.next_ty_var(TypeVariableOrigin {
                 // FIXME(eddyb) distinguish closure kind inference variables from the rest.
                 kind: TypeVariableOriginKind::ClosureSynthetic,
-                span: expr.span,
+                span_source: SpanSource::Span(expr.span),
             }),
         };
 
@@ -200,7 +200,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // Given a Projection predicate, we can potentially infer
                     // the complete signature.
                     self.deduce_sig_from_projection(
-                        Some(obligation.cause.span),
+                        Some(obligation.cause.span_source.to_span(self.tcx)),
                         bound_predicate.rebind(proj_predicate),
                     )
                 } else {
@@ -500,7 +500,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             {
                 // Instantiate (this part of..) S to S', i.e., with fresh variables.
                 let (supplied_ty, _) = self.infcx.replace_bound_vars_with_fresh_vars(
-                    hir_ty.span,
+                    SpanSource::Span(hir_ty.span),
                     LateBoundRegionConversionTime::FnCall,
                     &ty::Binder::bind(supplied_ty),
                 ); // recreated from (*) above
@@ -513,7 +513,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
 
             let (supplied_output_ty, _) = self.infcx.replace_bound_vars_with_fresh_vars(
-                decl.output.span(),
+                SpanSource::Span(decl.output.span()),
                 LateBoundRegionConversionTime::FnCall,
                 &supplied_sig.output(),
             );
@@ -624,7 +624,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 obligation.predicate.skip_binders()
             {
                 self.deduce_future_output_from_projection(
-                    obligation.cause.span,
+                    obligation.cause.span_source.to_span(self.tcx),
                     ty::Binder::bind(proj_predicate),
                 )
             } else {

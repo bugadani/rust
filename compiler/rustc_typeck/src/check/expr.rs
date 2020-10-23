@@ -34,6 +34,7 @@ use rustc_hir::lang_items::LangItem;
 use rustc_hir::{ExprKind, QPath};
 use rustc_infer::infer;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty;
 use rustc_middle::ty::adjustment::{Adjust, Adjustment, AllowTwoPhase};
 use rustc_middle::ty::Ty;
@@ -79,7 +80,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             );
             let adj_ty = self.next_diverging_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::AdjustmentType,
-                span: expr.span,
+                span_source: SpanSource::Span(expr.span),
             });
             self.apply_adjustments(
                 expr,
@@ -416,7 +417,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // this time with enough precision to check that the value
                 // whose address was taken can actually be made to live as long
                 // as it needs to live.
-                let region = self.next_region_var(infer::AddrOfRegion(expr.span));
+                let region = self.next_region_var(infer::AddrOfRegion(SpanSource::Span(expr.span)));
                 self.tcx.mk_ref(region, tm)
             }
         }
@@ -492,7 +493,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // with fresh vars.
                     let input = self
                         .replace_bound_vars_with_fresh_vars(
-                            expr.span,
+                            SpanSource::Span(expr.span),
                             infer::LateBoundRegionConversionTime::FnCall,
                             &fn_sig.input(i),
                         )
@@ -512,7 +513,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // with fresh vars.
             let output = self
                 .replace_bound_vars_with_fresh_vars(
-                    expr.span,
+                    SpanSource::Span(expr.span),
                     infer::LateBoundRegionConversionTime::FnCall,
                     &fn_sig.output(),
                 )
@@ -598,7 +599,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         &cause,
                         &mut |mut err| {
                             self.suggest_mismatched_types_on_tail(
-                                &mut err, expr, ty, e_ty, cause.span, target_id,
+                                &mut err,
+                                expr,
+                                ty,
+                                e_ty,
+                                cause.span_source.to_span(tcx),
+                                target_id,
                             );
                             if let Some(val) = ty_kind_suggestion(ty) {
                                 let label = destination
@@ -1005,7 +1011,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 .unwrap_or_else(|| {
                     self.next_ty_var(TypeVariableOrigin {
                         kind: TypeVariableOriginKind::TypeInference,
-                        span: expr.span,
+                        span_source: SpanSource::Span(expr.span),
                     })
                 });
             let mut coerce = CoerceMany::with_coercion_sites(coerce_to, args);
@@ -1019,7 +1025,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         } else {
             self.next_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::TypeInference,
-                span: expr.span,
+                span_source: SpanSource::Span(expr.span),
             })
         };
         self.tcx.mk_array(element_ty, args.len() as u64)
@@ -1051,7 +1057,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             None => {
                 let ty = self.next_ty_var(TypeVariableOrigin {
                     kind: TypeVariableOriginKind::MiscVariable,
-                    span: element.span,
+                    span_source: SpanSource::Span(element.span),
                 });
                 let element_ty = self.check_expr_has_type_or_error(&element, ty, |_| {});
                 (element_ty, ty)

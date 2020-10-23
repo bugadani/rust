@@ -6,10 +6,10 @@ use rustc_hir as hir;
 use rustc_infer::infer::canonical::{self, Canonical};
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
 use rustc_infer::traits::TraitEngineExt as _;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::outlives::Component;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypeFoldable};
-use rustc_span::source_map::DUMMY_SP;
 use rustc_trait_selection::infer::InferCtxtBuilderExt;
 use rustc_trait_selection::traits::query::outlives_bounds::OutlivesBound;
 use rustc_trait_selection::traits::query::{CanonicalTyGoal, Fallible, NoSolution};
@@ -61,8 +61,9 @@ fn compute_implied_outlives_bounds<'tcx>(
         // than the ultimate set. (Note: normally there won't be
         // unresolved inference variables here anyway, but there might be
         // during typeck under some circumstances.)
-        let obligations = wf::obligations(infcx, param_env, hir::CRATE_HIR_ID, 0, arg, DUMMY_SP)
-            .unwrap_or(vec![]);
+        let obligations =
+            wf::obligations(infcx, param_env, hir::CRATE_HIR_ID, 0, arg, SpanSource::DUMMY)
+                .unwrap_or(vec![]);
 
         // N.B., all of these predicates *ought* to be easily proven
         // true. In fact, their correctness is (mostly) implied by

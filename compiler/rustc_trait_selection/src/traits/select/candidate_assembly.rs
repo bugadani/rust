@@ -314,7 +314,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             ty::Projection(_) | ty::Opaque(..) => {}
             ty::Infer(ty::TyVar(_)) => {
                 span_bug!(
-                    obligation.cause.span,
+                    obligation.cause.span_source.to_span(self.infcx.tcx),
                     "Self=_ should have been handled by assemble_candidates"
                 );
             }

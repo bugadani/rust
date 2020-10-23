@@ -15,6 +15,7 @@ use rustc_hir::def_id::DefId;
 use rustc_hir::intravisit::Visitor;
 use rustc_hir::lang_items::LangItem;
 use rustc_hir::{AsyncGeneratorKind, GeneratorKind, Node};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{
     self, suggest_constraining_type_param, AdtKind, DefIdTree, Infer, InferTy, ToPredicate, Ty,
     TyCtxt, TypeFoldable, WithConstness,
@@ -169,7 +170,7 @@ pub trait InferCtxtExt<'tcx> {
         err: &mut DiagnosticBuilder<'_>,
         obligation: &PredicateObligation<'tcx>,
         trait_ref: &ty::Binder<ty::TraitRef<'tcx>>,
-        span: Span,
+        span_source: SpanSource,
     );
 }
 
@@ -471,7 +472,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         }
         let param_env = obligation.param_env;
         let body_id = obligation.cause.body_id;
-        let span = obligation.cause.span;
+        let span = obligation.cause.span_source.to_span(self.tcx); // FIXME
         let real_trait_ref = match &obligation.cause.code {
             ObligationCauseCode::ImplDerivedObligation(cause)
             | ObligationCauseCode::DerivedObligation(cause)
@@ -635,7 +636,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
             // of the argument, so we can provide a suggestion. This is signaled
             // by `points_at_arg`. Otherwise, we give a more general note.
             err.span_suggestion_verbose(
-                obligation.cause.span.shrink_to_hi(),
+                obligation.cause.span_source.to_span(self.tcx).shrink_to_hi(),
                 &msg,
                 sugg,
                 Applicability::HasPlaceholders,
@@ -657,17 +658,16 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
             return false;
         }
 
-        let span = obligation.cause.span;
         let param_env = obligation.param_env;
         let trait_ref = trait_ref.skip_binder();
 
-        if let ObligationCauseCode::ImplDerivedObligation(obligation) = &obligation.cause.code {
+        if let ObligationCauseCode::ImplDerivedObligation(obligation_) = &obligation.cause.code {
             // Try to apply the original trait binding obligation by borrowing.
             let self_ty = trait_ref.self_ty();
             let found = self_ty.to_string();
             let new_self_ty = self.tcx.mk_imm_ref(self.tcx.lifetimes.re_static, self_ty);
             let substs = self.tcx.mk_substs_trait(new_self_ty, &[]);
-            let new_trait_ref = ty::TraitRef::new(obligation.parent_trait_ref.def_id(), substs);
+            let new_trait_ref = ty::TraitRef::new(obligation_.parent_trait_ref.def_id(), substs);
             let new_obligation = Obligation::new(
                 ObligationCause::dummy(),
                 param_env,
@@ -675,6 +675,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
             );
 
             if self.predicate_must_hold_modulo_regions(&new_obligation) {
+                let span = obligation.cause.span_source.to_span(self.tcx);
                 if let Ok(snippet) = self.tcx.sess.source_map().span_to_snippet(span) {
                     // We have a very specific type of error, where just borrowing this argument
                     // might solve the problem. In cases like this, the important part is the
@@ -685,7 +686,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     let msg = format!(
                         "the trait bound `{}: {}` is not satisfied",
                         found,
-                        obligation.parent_trait_ref.skip_binder().print_only_trait_path(),
+                        obligation_.parent_trait_ref.skip_binder().print_only_trait_path(),
                     );
                     if has_custom_message {
                         err.note(&msg);
@@ -701,7 +702,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         span,
                         &format!(
                             "expected an implementor of trait `{}`",
-                            obligation.parent_trait_ref.skip_binder().print_only_trait_path(),
+                            obligation_.parent_trait_ref.skip_binder().print_only_trait_path(),
                         ),
                     );
 
@@ -736,7 +737,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         err: &mut DiagnosticBuilder<'_>,
         trait_ref: &ty::Binder<ty::TraitRef<'tcx>>,
     ) {
-        let span = obligation.cause.span;
+        let span = obligation.cause.span_source.to_span(self.tcx);
 
         if let Ok(snippet) = self.tcx.sess.source_map().span_to_snippet(span) {
             let refs_number =
@@ -800,7 +801,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         trait_ref: &ty::Binder<ty::TraitRef<'tcx>>,
         points_at_arg: bool,
     ) {
-        let span = obligation.cause.span;
+        let span = obligation.cause.span_source.to_span(self.tcx);
         if let Ok(snippet) = self.tcx.sess.source_map().span_to_snippet(span) {
             let refs_number =
                 snippet.chars().filter(|c| !c.is_whitespace()).take_while(|c| *c == '&').count();
@@ -1271,7 +1272,8 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         debug!(
             "maybe_note_obligation_cause_for_async_await: obligation.predicate={:?} \
                 obligation.cause.span={:?}",
-            obligation.predicate, obligation.cause.span
+            obligation.predicate,
+            obligation.cause.span_source.to_span(self.tcx)
         );
         let hir = self.tcx.hir();
 
@@ -2039,12 +2041,12 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         err: &mut DiagnosticBuilder<'_>,
         obligation: &PredicateObligation<'tcx>,
         trait_ref: &ty::Binder<ty::TraitRef<'tcx>>,
-        span: Span,
+        span_source: SpanSource,
     ) {
         debug!(
             "suggest_await_before_try: obligation={:?}, span={:?}, trait_ref={:?}, trait_ref_self_ty={:?}",
             obligation,
-            span,
+            span_source.to_span(self.tcx),
             trait_ref,
             trait_ref.self_ty()
         );
@@ -2083,7 +2085,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     // `T`
                     substs: self.tcx.mk_substs_trait(
                         trait_ref.self_ty().skip_binder(),
-                        self.fresh_substs_for_item(span, item_def_id),
+                        self.fresh_substs_for_item(span_source, item_def_id),
                     ),
                     // `Future::Output`
                     item_def_id,
@@ -2112,6 +2114,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                 );
                 debug!("suggest_await_before_try: try_trait_obligation {:?}", try_obligation);
                 if self.predicate_may_hold(&try_obligation) && impls_future {
+                    let span = span_source.to_span(self.tcx);
                     if let Ok(snippet) = self.tcx.sess.source_map().span_to_snippet(span) {
                         if snippet.ends_with('?') {
                             err.span_suggestion(

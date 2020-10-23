@@ -98,6 +98,7 @@ use rustc_hir::Node;
 use rustc_infer::infer::{InferOk, TyCtxtInferExt};
 use rustc_infer::traits::TraitEngineExt as _;
 use rustc_middle::middle;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_middle::util;
@@ -240,7 +241,11 @@ fn check_main_fn_ty(tcx: TyCtxt<'_>, main_def_id: LocalDefId) {
 
             require_same_types(
                 tcx,
-                &ObligationCause::new(main_span, main_id, ObligationCauseCode::MainFunctionType),
+                &ObligationCause::new(
+                    SpanSource::Span(main_span),
+                    main_id,
+                    ObligationCauseCode::MainFunctionType,
+                ),
                 se_ty,
                 tcx.mk_fn_ptr(actual),
             );
@@ -327,7 +332,11 @@ fn check_start_fn_ty(tcx: TyCtxt<'_>, start_def_id: LocalDefId) {
 
             require_same_types(
                 tcx,
-                &ObligationCause::new(start_span, start_id, ObligationCauseCode::StartFunctionType),
+                &ObligationCause::new(
+                    SpanSource::Span(start_span),
+                    start_id,
+                    ObligationCauseCode::StartFunctionType,
+                ),
                 se_ty,
                 tcx.mk_fn_ptr(tcx.fn_sig(start_def_id)),
             );

@@ -905,7 +905,8 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 fn check_return_ty_is_sync(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, hir_id: HirId) {
     let ty = body.return_ty();
     tcx.infer_ctxt().enter(|infcx| {
-        let cause = traits::ObligationCause::new(body.span, hir_id, traits::SharedStatic);
+        let cause =
+            traits::ObligationCause::new(SpanSource::Span(body.span), hir_id, traits::SharedStatic);
         let mut fulfillment_cx = traits::FulfillmentContext::new();
         let sync_def_id = tcx.require_lang_item(LangItem::Sync, Some(SpanSource::Span(body.span)));
         fulfillment_cx.register_bound(&infcx, ty::ParamEnv::empty(), ty, sync_def_id, cause);

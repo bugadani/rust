@@ -8,6 +8,7 @@
 //! contain revealed `impl Trait` values).
 
 use rustc_infer::infer::LateBoundRegionConversionTime;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::Ty;
 
@@ -57,7 +58,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     Some(
                         self.infcx
                             .replace_bound_vars_with_fresh_vars(
-                                body.span,
+                                SpanSource::Span(body.span),
                                 LateBoundRegionConversionTime::FnCall,
                                 &poly_sig,
                             )

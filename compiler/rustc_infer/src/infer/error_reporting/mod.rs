@@ -339,7 +339,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
                     RegionResolutionError::GenericBoundFailure(origin, param_ty, sub) => {
                         self.report_generic_bound_failure(
-                            origin.span(),
+                            origin.span_source().to_span(self.tcx),
                             Some(origin),
                             param_ty,
                             sub,
@@ -447,10 +447,18 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
         // sort the errors by span, for better error message stability.
         errors.sort_by_key(|u| match *u {
-            RegionResolutionError::ConcreteFailure(ref sro, _, _) => sro.span(),
-            RegionResolutionError::GenericBoundFailure(ref sro, _, _) => sro.span(),
-            RegionResolutionError::SubSupConflict(_, ref rvo, _, _, _, _) => rvo.span(),
-            RegionResolutionError::UpperBoundUniverseConflict(_, ref rvo, _, _, _) => rvo.span(),
+            RegionResolutionError::ConcreteFailure(ref sro, _, _) => {
+                sro.span_source().to_span(self.tcx)
+            }
+            RegionResolutionError::GenericBoundFailure(ref sro, _, _) => {
+                sro.span_source().to_span(self.tcx)
+            }
+            RegionResolutionError::SubSupConflict(_, ref rvo, _, _, _, _) => {
+                rvo.span_source().to_span(self.tcx)
+            }
+            RegionResolutionError::UpperBoundUniverseConflict(_, ref rvo, _, _, _) => {
+                rvo.span_source().to_span(self.tcx)
+            }
             RegionResolutionError::MemberConstraintFailure { span, .. } => span,
         });
         errors
@@ -624,7 +632,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             }) => match source {
                 hir::MatchSource::IfLetDesugar { .. } => {
                     let msg = "`if let` arms have incompatible types";
-                    err.span_label(cause.span, msg);
+                    err.span_label(cause.span_source.to_span(self.tcx), msg);
                     if let Some(ret_sp) = opt_suggest_box_span {
                         self.suggest_boxing_for_return_impl_trait(
                             err,
@@ -649,7 +657,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                             Some(ty) if expected == ty => {
                                 let source_map = self.tcx.sess.source_map();
                                 err.span_suggestion(
-                                    source_map.end_point(cause.span),
+                                    source_map.end_point(cause.span_source.to_span(self.tcx)),
                                     "try removing this `?`",
                                     "".to_string(),
                                     Applicability::MachineApplicable,
@@ -1939,14 +1947,14 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         };
 
         if let Some(SubregionOrigin::CompareImplMethodObligation {
-            span,
+            span_source,
             item_name,
             impl_item_def_id,
             trait_item_def_id,
         }) = origin
         {
             return self.report_extra_impl_obligation(
-                span,
+                span_source.to_span(self.tcx),
                 item_name,
                 impl_item_def_id,
                 trait_item_def_id,
@@ -2128,7 +2136,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                         "...",
                     );
                     err.span_note(
-                        sup_trace.cause.span,
+                        sup_trace.cause.span_source.to_span(self.tcx),
                         &format!("...so that the {}", sup_trace.cause.as_requirement_str()),
                     );
 
@@ -2199,7 +2207,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
         struct_span_err!(
             self.tcx.sess,
-            var_origin.span(),
+            var_origin.span_source().to_span(self.tcx),
             E0495,
             "cannot infer an appropriate lifetime{} due to conflicting requirements",
             var_description

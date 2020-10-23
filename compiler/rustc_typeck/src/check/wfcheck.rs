@@ -12,6 +12,7 @@ use rustc_hir::itemlikevisit::ParItemLikeVisitor;
 use rustc_hir::lang_items::LangItem;
 use rustc_hir::ItemKind;
 use rustc_middle::hir::map as hir_map;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::{GenericArgKind, InternalSubsts, Subst};
 use rustc_middle::ty::trait_def::TraitSpecializationKind;
 use rustc_middle::ty::{
@@ -500,7 +501,7 @@ fn check_type_defn<'tcx, F>(
                     field.ty,
                     fcx.tcx.require_lang_item(LangItem::Sized, None),
                     traits::ObligationCause::new(
-                        field.span,
+                        SpanSource::Span(field.span),
                         fcx.body_id,
                         traits::FieldSized {
                             adt_kind: match item_adt_kind(&item.kind) {
@@ -529,7 +530,7 @@ fn check_type_defn<'tcx, F>(
                     InternalSubsts::identity_for_item(fcx.tcx, discr_def_id.to_def_id());
 
                 let cause = traits::ObligationCause::new(
-                    fcx.tcx.def_span(discr_def_id),
+                    SpanSource::DefId(discr_def_id.to_def_id()),
                     fcx.body_id,
                     traits::MiscObligation,
                 );
@@ -596,7 +597,7 @@ fn check_associated_type_bounds(fcx: &FnCtxt<'_, '_>, item: &ty::AssocItem, span
             fcx.param_env,
             fcx.body_id,
             normalized_bound,
-            bound_span,
+            SpanSource::Span(bound_span),
         )
     });
 
@@ -651,7 +652,11 @@ fn check_item_type(tcx: TyCtxt<'_>, item_id: hir::HirId, ty_span: Span, allow_fo
             fcx.register_bound(
                 item_ty,
                 fcx.tcx.require_lang_item(LangItem::Sized, None),
-                traits::ObligationCause::new(ty_span, fcx.body_id, traits::MiscObligation),
+                traits::ObligationCause::new(
+                    SpanSource::Span(ty_span),
+                    fcx.body_id,
+                    traits::MiscObligation,
+                ),
             );
         }
 
@@ -684,7 +689,7 @@ fn check_impl<'tcx>(
                     fcx.param_env,
                     fcx.body_id,
                     &trait_ref,
-                    ast_trait_ref.path.span,
+                    SpanSource::Span(ast_trait_ref.path.span),
                     Some(item),
                 );
                 for obligation in obligations {
@@ -844,8 +849,11 @@ fn check_where_clauses<'tcx, 'fcx>(
             // below: there, we are not trying to prove those predicates
             // to be *true* but merely *well-formed*.
             let pred = fcx.normalize_associated_types_in(sp, &pred);
-            let cause =
-                traits::ObligationCause::new(sp, fcx.body_id, traits::ItemObligation(def_id));
+            let cause = traits::ObligationCause::new(
+                SpanSource::Span(sp),
+                fcx.body_id,
+                traits::ItemObligation(def_id),
+            );
             traits::Obligation::new(cause, fcx.param_env, pred)
         });
 
@@ -865,7 +873,13 @@ fn check_where_clauses<'tcx, 'fcx>(
     assert_eq!(predicates.predicates.len(), predicates.spans.len());
     let wf_obligations =
         predicates.predicates.iter().zip(predicates.spans.iter()).flat_map(|(&p, &sp)| {
-            traits::wf::predicate_obligations(fcx, fcx.param_env, fcx.body_id, p, sp)
+            traits::wf::predicate_obligations(
+                fcx,
+                fcx.param_env,
+                fcx.body_id,
+                p,
+                SpanSource::Span(sp),
+            )
         });
 
     for obligation in wf_obligations.chain(default_obligations) {
@@ -1307,7 +1321,7 @@ fn check_false_global_bounds(fcx: &FnCtxt<'_, '_>, span: Span, id: hir::HirId) {
         if pred.is_global() && !pred.has_late_bound_regions() {
             let pred = fcx.normalize_associated_types_in(span, &pred);
             let obligation = traits::Obligation::new(
-                traits::ObligationCause::new(span, id, traits::TrivialBound),
+                traits::ObligationCause::new(SpanSource::Span(span), id, traits::TrivialBound),
                 empty_env,
                 pred,
             );

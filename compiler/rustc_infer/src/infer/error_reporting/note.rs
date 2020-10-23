@@ -24,9 +24,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         };
         match *origin {
             infer::Subtype(ref trace) => {
+                let span = trace.span_source().to_span(self.tcx);
                 if let Some((expected, found)) = self.values_str(&trace.values) {
                     label_or_note(
-                        trace.cause.span,
+                        span,
                         &format!("...so that the {}", trace.cause.as_requirement_str()),
                     );
 
@@ -37,60 +38,72 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                     // *terrible*.
 
                     label_or_note(
-                        trace.cause.span,
+                        span,
                         &format!("...so that {}", trace.cause.as_requirement_str()),
                     );
                 }
             }
-            infer::Reborrow(span) => {
-                label_or_note(span, "...so that reference does not outlive borrowed content");
-            }
-            infer::ReborrowUpvar(span, ref upvar_id) => {
-                let var_name = self.tcx.hir().name(upvar_id.var_path.hir_id);
-                label_or_note(span, &format!("...so that closure can access `{}`", var_name));
-            }
-            infer::RelateObjectBound(span) => {
-                label_or_note(span, "...so that it can be closed over into an object");
-            }
-            infer::CallReturn(span) => {
-                label_or_note(span, "...so that return value is valid for the call");
-            }
-            infer::DataBorrowed(ty, span) => {
+            infer::Reborrow(span_source) => {
                 label_or_note(
-                    span,
+                    span_source.to_span(self.tcx),
+                    "...so that reference does not outlive borrowed content",
+                );
+            }
+            infer::ReborrowUpvar(span_source, ref upvar_id) => {
+                let var_name = self.tcx.hir().name(upvar_id.var_path.hir_id);
+                label_or_note(
+                    span_source.to_span(self.tcx),
+                    &format!("...so that closure can access `{}`", var_name),
+                );
+            }
+            infer::RelateObjectBound(span_source) => {
+                label_or_note(
+                    span_source.to_span(self.tcx),
+                    "...so that it can be closed over into an object",
+                );
+            }
+            infer::CallReturn(span_source) => {
+                label_or_note(
+                    span_source.to_span(self.tcx),
+                    "...so that return value is valid for the call",
+                );
+            }
+            infer::DataBorrowed(ty, span_source) => {
+                label_or_note(
+                    span_source.to_span(self.tcx),
                     &format!(
                         "...so that the type `{}` is not borrowed for too long",
                         self.ty_to_string(ty)
                     ),
                 );
             }
-            infer::ReferenceOutlivesReferent(ty, span) => {
+            infer::ReferenceOutlivesReferent(ty, span_source) => {
                 label_or_note(
-                    span,
+                    span_source.to_span(self.tcx),
                     &format!(
                         "...so that the reference type `{}` does not outlive the data it points at",
                         self.ty_to_string(ty)
                     ),
                 );
             }
-            infer::RelateParamBound(span, t) => {
+            infer::RelateParamBound(span_source, t) => {
                 label_or_note(
-                    span,
+                    span_source.to_span(self.tcx),
                     &format!(
                         "...so that the type `{}` will meet its required lifetime bounds",
                         self.ty_to_string(t)
                     ),
                 );
             }
-            infer::RelateRegionParamBound(span) => {
+            infer::RelateRegionParamBound(span_source) => {
                 label_or_note(
-                    span,
+                    span_source.to_span(self.tcx),
                     "...so that the declared lifetime parameter bounds are satisfied",
                 );
             }
-            infer::CompareImplMethodObligation { span, .. } => {
+            infer::CompareImplMethodObligation { span_source, .. } => {
                 label_or_note(
-                    span,
+                    span_source.to_span(self.tcx),
                     "...so that the definition in impl matches the definition from the trait",
                 );
             }
@@ -117,10 +130,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 );
                 err
             }
-            infer::Reborrow(span) => {
+            infer::Reborrow(span_source) => {
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0312,
                     "lifetime of reference outlives lifetime of borrowed content..."
                 );
@@ -140,11 +153,11 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 );
                 err
             }
-            infer::ReborrowUpvar(span, ref upvar_id) => {
+            infer::ReborrowUpvar(span_source, ref upvar_id) => {
                 let var_name = self.tcx.hir().name(upvar_id.var_path.hir_id);
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0313,
                     "lifetime of borrowed pointer outlives lifetime of captured variable `{}`...",
                     var_name
@@ -165,10 +178,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 );
                 err
             }
-            infer::RelateObjectBound(span) => {
+            infer::RelateObjectBound(span_source) => {
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0476,
                     "lifetime of the source pointer does not outlive lifetime bound of the \
                      object type"
@@ -183,10 +196,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 );
                 err
             }
-            infer::RelateParamBound(span, ty) => {
+            infer::RelateParamBound(span_source, ty) => {
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0477,
                     "the type `{}` does not fulfill the required lifetime",
                     self.ty_to_string(ty)
@@ -199,9 +212,13 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 }
                 err
             }
-            infer::RelateRegionParamBound(span) => {
-                let mut err =
-                    struct_span_err!(self.tcx.sess, span, E0478, "lifetime bound not satisfied");
+            infer::RelateRegionParamBound(span_source) => {
+                let mut err = struct_span_err!(
+                    self.tcx.sess,
+                    span_source.to_span(self.tcx),
+                    E0478,
+                    "lifetime bound not satisfied",
+                );
                 note_and_explain_region(
                     self.tcx,
                     &mut err,
@@ -218,10 +235,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 );
                 err
             }
-            infer::CallReturn(span) => {
+            infer::CallReturn(span_source) => {
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0482,
                     "lifetime of return value does not outlive the function call"
                 );
@@ -234,10 +251,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 );
                 err
             }
-            infer::DataBorrowed(ty, span) => {
+            infer::DataBorrowed(ty, span_source) => {
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0490,
                     "a value of type `{}` is borrowed for too long",
                     self.ty_to_string(ty)
@@ -246,10 +263,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 note_and_explain_region(self.tcx, &mut err, "but the borrow lasts for ", sup, "");
                 err
             }
-            infer::ReferenceOutlivesReferent(ty, span) => {
+            infer::ReferenceOutlivesReferent(ty, span_source) => {
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0491,
                     "in type `{}`, reference has a longer lifetime than the data it references",
                     self.ty_to_string(ty)
@@ -265,12 +282,12 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 err
             }
             infer::CompareImplMethodObligation {
-                span,
+                span_source,
                 item_name,
                 impl_item_def_id,
                 trait_item_def_id,
             } => self.report_extra_impl_obligation(
-                span,
+                span_source.to_span(self.tcx),
                 item_name,
                 impl_item_def_id,
                 trait_item_def_id,

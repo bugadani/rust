@@ -3,6 +3,7 @@ use crate::check::{Diverges, Expectation, FnCtxt, Needs};
 use rustc_hir::{self as hir, ExprKind};
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_infer::traits::Obligation;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, ToPredicate, Ty};
 use rustc_span::Span;
 use rustc_trait_selection::opaque_types::InferCtxtExt as _;
@@ -84,7 +85,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 Expectation::ExpectHasType(ety) if ety != self.tcx.mk_unit() => ety,
                 _ => self.next_ty_var(TypeVariableOrigin {
                     kind: TypeVariableOriginKind::MiscVariable,
-                    span: expr.span,
+                    span_source: SpanSource::Span(expr.span),
                 }),
             };
             CoerceMany::with_coercion_sites(coerce_first, arms)
@@ -503,7 +504,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // `check_pat` for some details.
             let scrut_ty = self.next_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::TypeInference,
-                span: scrut.span,
+                span_source: SpanSource::Span(scrut.span),
             });
             self.check_expr_has_type_or_error(scrut, scrut_ty, |_| {});
             scrut_ty

@@ -1,12 +1,12 @@
 use rustc_hir::def_id::DefId;
 use rustc_middle::ty::{self, Ty, TyVid};
 use rustc_span::symbol::Symbol;
-use rustc_span::Span;
 
 use crate::infer::InferCtxtUndoLogs;
 
 use rustc_data_structures::snapshot_vec as sv;
 use rustc_data_structures::unify as ut;
+use rustc_middle::middle::lang_items::SpanSource;
 use std::cmp;
 use std::marker::PhantomData;
 use std::ops::Range;
@@ -95,7 +95,7 @@ pub struct TypeVariableTable<'a, 'tcx> {
 #[derive(Copy, Clone, Debug)]
 pub struct TypeVariableOrigin {
     pub kind: TypeVariableOriginKind,
-    pub span: Span,
+    pub span_source: SpanSource,
 }
 
 /// Reasons to create a type inference variable

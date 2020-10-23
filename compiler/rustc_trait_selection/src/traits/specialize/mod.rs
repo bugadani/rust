@@ -19,11 +19,11 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::struct_span_err;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_middle::lint::LintDiagnosticBuilder;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::{InternalSubsts, Subst, SubstsRef};
 use rustc_middle::ty::{self, TyCtxt};
 use rustc_session::lint::builtin::COHERENCE_LEAK_CHECK;
 use rustc_session::lint::builtin::ORDER_DEPENDENT_TRAIT_OBJECTS;
-use rustc_span::DUMMY_SP;
 
 use super::util::impl_trait_ref_and_oblig;
 use super::{FulfillmentContext, SelectionContext};
@@ -188,7 +188,7 @@ fn fulfill_implication<'a, 'tcx>(
     );
 
     let selcx = &mut SelectionContext::new(&infcx);
-    let target_substs = infcx.fresh_substs_for_item(DUMMY_SP, target_impl);
+    let target_substs = infcx.fresh_substs_for_item(SpanSource::DUMMY, target_impl);
     let (target_trait_ref, obligations) =
         impl_trait_ref_and_oblig(selcx, param_env, target_impl, target_substs);
 

@@ -13,6 +13,7 @@ use rustc_hir::def::DefKind;
 use rustc_index::bit_set::BitSet;
 use rustc_index::vec::IndexVec;
 use rustc_infer::infer::InferCtxt;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::abstract_const::{Node, NodeId};
 use rustc_middle::mir::interpret::ErrorHandled;
 use rustc_middle::mir::{self, Rvalue, StatementKind, TerminatorKind};
@@ -31,7 +32,7 @@ pub fn is_const_evaluatable<'cx, 'tcx>(
     def: ty::WithOptConstParam<DefId>,
     substs: SubstsRef<'tcx>,
     param_env: ty::ParamEnv<'tcx>,
-    span: Span,
+    span_source: SpanSource,
 ) -> Result<(), ErrorHandled> {
     debug!("is_const_evaluatable({:?}, {:?})", def, substs);
     if infcx.tcx.features().const_evaluatable_checked {
@@ -98,7 +99,10 @@ pub fn is_const_evaluatable<'cx, 'tcx>(
                         infcx
                             .tcx
                             .sess
-                            .struct_span_err(span, "unconstrained generic constant")
+                            .struct_span_err(
+                                span_source.to_span(tcx),
+                                "unconstrained generic constant",
+                            )
                             .span_help(
                                 tcx.def_span(def.did),
                                 "consider adding a `where` bound for this expression",
@@ -125,7 +129,7 @@ pub fn is_const_evaluatable<'cx, 'tcx>(
             infcx.tcx.struct_span_lint_hir(
                 lint::builtin::CONST_EVALUATABLE_UNCHECKED,
                 infcx.tcx.hir().local_def_id_to_hir_id(local_def_id),
-                span,
+                span_source.to_span(infcx.tcx),
                 |err| {
                     err.build("cannot use constants which depend on generic parameters in types")
                         .emit();
@@ -142,7 +146,13 @@ pub fn is_const_evaluatable<'cx, 'tcx>(
     // and hopefully soon change this to an error.
     //
     // See #74595 for more details about this.
-    let concrete = infcx.const_eval_resolve(param_env, def, substs, None, Some(span));
+    let concrete = infcx.const_eval_resolve(
+        param_env,
+        def,
+        substs,
+        None,
+        Some(span_source.to_span(infcx.tcx)),
+    );
 
     if concrete.is_ok() && substs.has_param_types_or_consts() {
         match infcx.tcx.def_kind(def.did) {
@@ -172,10 +182,10 @@ pub fn is_const_evaluatable<'cx, 'tcx>(
             // `fn test<const N: usize>() -> [0 - N]` eagerly here,
             // so until we fix this I don't really care.
 
-            let mut err = infcx
-                .tcx
-                .sess
-                .struct_span_err(span, "constant expression depends on a generic parameter");
+            let mut err = infcx.tcx.sess.struct_span_err(
+                span_source.to_span(infcx.tcx),
+                "constant expression depends on a generic parameter",
+            );
             // FIXME(const_generics): we should suggest to the user how they can resolve this
             // issue. However, this is currently not actually possible
             // (see https://github.com/rust-lang/rust/issues/66962#issuecomment-575907083).

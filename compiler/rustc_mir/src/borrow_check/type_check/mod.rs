@@ -1599,7 +1599,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     }
                 };
                 let (sig, map) = self.infcx.replace_bound_vars_with_fresh_vars(
-                    term.source_info.span,
+                    SpanSource::Span(term.source_info.span),
                     LateBoundRegionConversionTime::FnCall,
                     &sig,
                 );
@@ -2003,7 +2003,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                             self.infcx.report_selection_error(
                                 &traits::Obligation::new(
                                     ObligationCause::new(
-                                        span,
+                                        SpanSource::Span(span),
                                         self.tcx().hir().local_def_id_to_hir_id(def_id),
                                         traits::ObligationCauseCode::RepeatVec(should_suggest),
                                     ),
@@ -2295,7 +2295,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                         let ty_right = right.ty(body, tcx);
                         let common_ty = self.infcx.next_ty_var(TypeVariableOrigin {
                             kind: TypeVariableOriginKind::MiscVariable,
-                            span: body.source_info(location).span,
+                            span_source: SpanSource::Span(body.source_info(location).span),
                         });
                         self.relate_types(
                             common_ty,

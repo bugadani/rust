@@ -6,6 +6,7 @@ use crate::hir::def_id::DefId;
 use crate::hir::GenericArg;
 use rustc_hir as hir;
 use rustc_infer::infer::{self, InferOk};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::traits::{ObligationCauseCode, UnifyReceiverContext};
 use rustc_middle::ty::adjustment::{Adjust, Adjustment, PointerCast};
 use rustc_middle::ty::adjustment::{AllowTwoPhase, AutoBorrow, AutoBorrowMutability};
@@ -156,7 +157,8 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
             self.structurally_resolved_type(autoderef.span(), autoderef.final_ty(false));
 
         if let Some(mutbl) = pick.autoref {
-            let region = self.next_region_var(infer::Autoref(self.span, pick.item));
+            let region =
+                self.next_region_var(infer::Autoref(SpanSource::Span(self.span), pick.item));
             target = self.tcx.mk_ref(region, ty::TypeAndMut { mutbl, ty: target });
             let mutbl = match mutbl {
                 hir::Mutability::Not => AutoBorrowMutability::Not,
@@ -210,7 +212,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
                     "impl {:?} is not an inherent impl",
                     impl_def_id
                 );
-                self.fresh_substs_for_item(self.span, impl_def_id)
+                self.fresh_substs_for_item(SpanSource::Span(self.span), impl_def_id)
             }
 
             probe::ObjectPick => {
@@ -246,7 +248,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
                 // the process we will unify the transformed-self-type
                 // of the method with the actual type in order to
                 // unify some of these variables.
-                self.fresh_substs_for_item(self.span, trait_def_id)
+                self.fresh_substs_for_item(SpanSource::Span(self.span), trait_def_id)
             }
 
             probe::WhereClausePick(ref poly_trait_ref) => {
@@ -336,7 +338,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
                 _ => unreachable!(),
             },
             // Provide substitutions for parameters for which arguments are inferred.
-            |_, param, _| self.var_for_def(self.span, param),
+            |_, param, _| self.var_for_def(SpanSource::Span(self.span), param),
         )
     }
 
@@ -510,6 +512,8 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
     where
         T: TypeFoldable<'tcx>,
     {
-        self.fcx.replace_bound_vars_with_fresh_vars(self.span, infer::FnCall, value).0
+        self.fcx
+            .replace_bound_vars_with_fresh_vars(SpanSource::Span(self.span), infer::FnCall, value)
+            .0
     }
 }

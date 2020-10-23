@@ -132,10 +132,11 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for UnresolvedTypeFinder<'a, 'tcx> {
                     let ty_vars = &inner.type_variables();
                     if let TypeVariableOrigin {
                         kind: TypeVariableOriginKind::TypeParameterDefinition(_, _),
-                        span,
+                        span_source,
                     } = *ty_vars.var_origin(ty_vid)
                     {
-                        Some(span)
+                        // FIXME
+                        Some(span_source.to_span(self.infcx.tcx))
                     } else {
                         None
                     }

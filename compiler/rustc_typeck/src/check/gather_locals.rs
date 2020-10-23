@@ -3,6 +3,7 @@ use rustc_hir as hir;
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::PatKind;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::Ty;
 use rustc_span::Span;
 use rustc_trait_selection::traits;
@@ -23,7 +24,7 @@ impl<'a, 'tcx> GatherLocalsVisitor<'a, 'tcx> {
                 // Infer the variable's type.
                 let var_ty = self.fcx.next_ty_var(TypeVariableOrigin {
                     kind: TypeVariableOriginKind::TypeInference,
-                    span,
+                    span_source: SpanSource::Span(span),
                 });
                 self.fcx
                     .locals

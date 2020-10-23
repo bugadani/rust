@@ -502,8 +502,8 @@ impl<'cx, 'tcx> LexicalResolver<'cx, 'tcx> {
             }
 
             (&ReVar(v_id), _) | (_, &ReVar(v_id)) => {
-                span_bug!(
-                    self.var_infos[v_id].origin.span(),
+                span_source_bug!(
+                    self.var_infos[v_id].origin.span_source(),
                     "lub_concrete_regions invoked with non-concrete \
                      regions: {:?}, {:?}",
                     a,
@@ -852,7 +852,7 @@ impl<'cx, 'tcx> LexicalResolver<'cx, 'tcx> {
         // Errors in earlier passes can yield error variables without
         // resolution errors here; delay ICE in favor of those errors.
         self.tcx().sess.delay_span_bug(
-            self.var_infos[node_idx].origin.span(),
+            self.var_infos[node_idx].origin.span_source().to_span(self.tcx()),
             &format!(
                 "collect_error_for_expanding_node() could not find \
                  error for var {:?} in universe {:?}, lower_bounds={:#?}, \

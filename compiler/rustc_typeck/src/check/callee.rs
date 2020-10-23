@@ -8,6 +8,7 @@ use rustc_hir::def::Res;
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_infer::{infer, traits};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::{
     Adjust, Adjustment, AllowTwoPhase, AutoBorrow, AutoBorrowMutability,
 };
@@ -131,7 +132,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     let closure_sig = substs.as_closure().sig();
                     let closure_sig = self
                         .replace_bound_vars_with_fresh_vars(
-                            call_expr.span,
+                            SpanSource::Span(call_expr.span),
                             infer::FnCall,
                             &closure_sig,
                         )
@@ -205,7 +206,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 [self.tcx.mk_tup(arg_exprs.iter().map(|e| {
                     self.next_ty_var(TypeVariableOrigin {
                         kind: TypeVariableOriginKind::TypeInference,
-                        span: e.span,
+                        span_source: SpanSource::Span(e.span),
                     })
                 }))]
             });
@@ -406,8 +407,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // renormalize the associated types at this point, since they
         // previously appeared within a `Binder<>` and hence would not
         // have been normalized before.
-        let fn_sig =
-            self.replace_bound_vars_with_fresh_vars(call_expr.span, infer::FnCall, &fn_sig).0;
+        let fn_sig = self
+            .replace_bound_vars_with_fresh_vars(
+                SpanSource::Span(call_expr.span),
+                infer::FnCall,
+                &fn_sig,
+            )
+            .0;
         let fn_sig = self.normalize_associated_types_in(call_expr.span, &fn_sig);
 
         // Call the generic checker.

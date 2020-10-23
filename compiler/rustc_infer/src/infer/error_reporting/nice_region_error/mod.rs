@@ -2,6 +2,7 @@ use crate::infer::lexical_region_resolve::RegionResolutionError;
 use crate::infer::lexical_region_resolve::RegionResolutionError::*;
 use crate::infer::InferCtxt;
 use rustc_errors::{DiagnosticBuilder, ErrorReported};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, TyCtxt};
 use rustc_span::source_map::Span;
 
@@ -60,13 +61,15 @@ impl<'cx, 'tcx> NiceRegionError<'cx, 'tcx> {
             .or_else(|| self.try_report_static_impl_trait())
     }
 
-    pub fn regions(&self) -> Option<(Span, ty::Region<'tcx>, ty::Region<'tcx>)> {
+    pub fn regions(&self) -> Option<(SpanSource, ty::Region<'tcx>, ty::Region<'tcx>)> {
         match (&self.error, self.regions) {
-            (Some(ConcreteFailure(origin, sub, sup)), None) => Some((origin.span(), sub, sup)),
-            (Some(SubSupConflict(_, _, origin, sub, _, sup)), None) => {
-                Some((origin.span(), sub, sup))
+            (Some(ConcreteFailure(origin, sub, sup)), None) => {
+                Some((origin.span_source(), sub, sup))
             }
-            (None, Some((span, sub, sup))) => Some((span, sub, sup)),
+            (Some(SubSupConflict(_, _, origin, sub, _, sup)), None) => {
+                Some((origin.span_source(), sub, sup))
+            }
+            (None, Some((span, sub, sup))) => Some((SpanSource::Span(span), sub, sup)),
             _ => None,
         }
     }

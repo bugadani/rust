@@ -6,6 +6,7 @@ use rustc_ast as ast;
 use rustc_errors::{self, struct_span_err, Applicability, DiagnosticBuilder};
 use rustc_hir as hir;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::{
     Adjust, Adjustment, AllowTwoPhase, AutoBorrow, AutoBorrowMutability,
 };
@@ -173,7 +174,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let lhs_ty = self.check_expr(lhs_expr);
                 let fresh_var = self.next_ty_var(TypeVariableOrigin {
                     kind: TypeVariableOriginKind::MiscVariable,
-                    span: lhs_expr.span,
+                    span_source: SpanSource::Span(lhs_expr.span),
                 });
                 self.demand_coerce(lhs_expr, lhs_ty, fresh_var, Some(rhs_expr), AllowTwoPhase::No)
             }
@@ -195,7 +196,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // particularly for things like `String + &String`.
         let rhs_ty_var = self.next_ty_var(TypeVariableOrigin {
             kind: TypeVariableOriginKind::MiscVariable,
-            span: rhs_expr.span,
+            span_source: SpanSource::Span(rhs_expr.span),
         });
 
         let result = self.lookup_op_method(lhs_ty, &[rhs_ty_var], Op::Binary(op, is_assign));
@@ -1000,7 +1001,7 @@ impl TypeFolder<'tcx> for TypeParamEraser<'_, 'tcx> {
         match ty.kind() {
             ty::Param(_) => self.0.next_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::MiscVariable,
-                span: self.1,
+                span_source: SpanSource::Span(self.1),
             }),
             _ => ty.super_fold_with(self),
         }

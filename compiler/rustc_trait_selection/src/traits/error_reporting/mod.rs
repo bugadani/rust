@@ -17,6 +17,7 @@ use rustc_hir as hir;
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};
 use rustc_hir::intravisit::Visitor;
 use rustc_hir::Node;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::interpret::ErrorHandled;
 use rustc_middle::ty::error::ExpectedFound;
 use rustc_middle::ty::fold::TypeFolder;
@@ -112,7 +113,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         for (index, error) in errors.iter().enumerate() {
             // We want to ignore desugarings here: spans are equivalent even
             // if one is the result of a desugaring and the other is not.
-            let mut span = error.obligation.cause.span;
+            let mut span = error.obligation.cause.span_source.to_span(self.tcx);
             let expn_data = span.ctxt().outer_expn_data();
             if let ExpnKind::Desugaring(_) = expn_data.kind {
                 span = expn_data.call_site;
@@ -185,7 +186,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         let predicate = self.resolve_vars_if_possible(&obligation.predicate);
         let mut err = struct_span_err!(
             self.tcx.sess,
-            obligation.cause.span,
+            obligation.cause.span_source.to_span(self.tcx),
             E0275,
             "overflow evaluating the requirement `{}`",
             predicate
@@ -229,7 +230,6 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         points_at_arg: bool,
     ) {
         let tcx = self.tcx;
-        let span = obligation.cause.span;
 
         let mut err = match *error {
             SelectionError::Unimplemented => {
@@ -245,7 +245,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                 } = obligation.cause.code
                 {
                     self.report_extra_impl_obligation(
-                        span,
+                        obligation.cause.span_source.to_span(tcx),
                         item_name,
                         impl_item_def_id,
                         trait_item_def_id,
@@ -283,7 +283,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                             .tcx
                             .sess
                             .source_map()
-                            .span_to_snippet(span)
+                            .span_to_snippet(obligation.cause.span_source.to_span(tcx))
                             .map(|s| &s == "?")
                             .unwrap_or(false);
                         let is_from = self.tcx.get_diagnostic_item(sym::from_trait)
@@ -308,7 +308,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
 
                         let mut err = struct_span_err!(
                             self.tcx.sess,
-                            span,
+                            obligation.cause.span_source.to_span(tcx),
                             E0277,
                             "{}",
                             message.unwrap_or_else(|| format!(
@@ -329,7 +329,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                                 Some(trait_ref.self_ty().skip_binder()) == none_error;
                             if should_convert_option_to_result {
                                 err.span_suggestion_verbose(
-                                    span.shrink_to_lo(),
+                                    obligation.cause.span_source.to_span(self.tcx).shrink_to_lo(),
                                     "consider converting the `Option<T>` into a `Result<T, _>` \
                                      using `Option::ok_or` or `Option::ok_or_else`",
                                     ".ok_or_else(|| /* error value */)".to_string(),
@@ -337,7 +337,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                                 );
                             } else if should_convert_result_to_option {
                                 err.span_suggestion_verbose(
-                                    span.shrink_to_lo(),
+                                    obligation.cause.span_source.to_span(self.tcx).shrink_to_lo(),
                                     "consider converting the `Result<T, _>` into an `Option<T>` \
                                      using `Result::ok`",
                                     ".ok()".to_string(),
@@ -381,7 +381,10 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         if let Some(ref s) = label {
                             // If it has a custom `#[rustc_on_unimplemented]`
                             // error message, let's display it as the label!
-                            err.span_label(span, s.as_str());
+                            err.span_label(
+                                obligation.cause.span_source.to_span(self.tcx),
+                                s.as_str(),
+                            );
                             if !matches!(trait_ref.skip_binder().self_ty().kind(), ty::Param(_)) {
                                 // When the self type is a type param We don't need to "the trait
                                 // `std::marker::Sized` is not implemented for `T`" as we will point
@@ -389,7 +392,10 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                                 err.help(&explanation);
                             }
                         } else {
-                            err.span_label(span, explanation);
+                            err.span_label(
+                                obligation.cause.span_source.to_span(self.tcx),
+                                explanation,
+                            );
                         }
                         if let Some((msg, span)) = type_def {
                             err.span_label(span, &msg);
@@ -417,14 +423,29 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         self.suggest_dereferences(&obligation, &mut err, &trait_ref, points_at_arg);
                         self.suggest_fn_call(&obligation, &mut err, &trait_ref, points_at_arg);
                         self.suggest_remove_reference(&obligation, &mut err, &trait_ref);
-                        self.suggest_semicolon_removal(&obligation, &mut err, span, &trait_ref);
+                        self.suggest_semicolon_removal(
+                            &obligation,
+                            &mut err,
+                            obligation.cause.span_source.to_span(tcx),
+                            &trait_ref,
+                        );
                         self.note_version_mismatch(&mut err, &trait_ref);
 
                         if Some(trait_ref.def_id()) == tcx.lang_items().try_trait() {
-                            self.suggest_await_before_try(&mut err, &obligation, &trait_ref, span);
+                            self.suggest_await_before_try(
+                                &mut err,
+                                &obligation,
+                                &trait_ref,
+                                obligation.cause.span_source,
+                            );
                         }
 
-                        if self.suggest_impl_trait(&mut err, span, &obligation, &trait_ref) {
+                        if self.suggest_impl_trait(
+                            &mut err,
+                            obligation.cause.span_source.to_span(tcx),
+                            &obligation,
+                            &trait_ref,
+                        ) {
                             err.emit();
                             return;
                         }
@@ -528,7 +549,11 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         // Errors for Subtype predicates show up as
                         // `FulfillmentErrorCode::CodeSubtypeError`,
                         // not selection error.
-                        span_bug!(span, "subtype requirement gave wrong error: `{:?}`", predicate)
+                        span_bug!(
+                            obligation.cause.span_source.to_span(tcx),
+                            "subtype requirement gave wrong error: `{:?}`",
+                            predicate
+                        )
                     }
 
                     ty::PredicateAtom::RegionOutlives(predicate) => {
@@ -540,7 +565,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                             .unwrap();
                         struct_span_err!(
                             self.tcx.sess,
-                            span,
+                            obligation.cause.span_source.to_span(tcx),
                             E0279,
                             "the requirement `{}` is not satisfied (`{}`)",
                             predicate,
@@ -552,7 +577,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         let predicate = self.resolve_vars_if_possible(&obligation.predicate);
                         struct_span_err!(
                             self.tcx.sess,
-                            span,
+                            obligation.cause.span_source.to_span(tcx),
                             E0280,
                             "the requirement `{}` is not satisfied",
                             predicate
@@ -561,7 +586,12 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
 
                     ty::PredicateAtom::ObjectSafe(trait_def_id) => {
                         let violations = self.tcx.object_safety_violations(trait_def_id);
-                        report_object_safety_error(self.tcx, span, trait_def_id, violations)
+                        report_object_safety_error(
+                            self.tcx,
+                            obligation.cause.span_source.to_span(tcx),
+                            trait_def_id,
+                            violations,
+                        )
                     }
 
                     ty::PredicateAtom::ClosureKind(closure_def_id, closure_substs, kind) => {
@@ -587,7 +617,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                             format!("this closure implements `{}`, not `{}`", found_kind, kind),
                         );
                         err.span_label(
-                            obligation.cause.span,
+                            obligation.cause.span_source.to_span(self.tcx),
                             format!("the requirement to implement `{}` derives from here", kind),
                         );
 
@@ -631,12 +661,16 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                             // ambiguity; otherwise, they always
                             // degenerate into other obligations
                             // (which may fail).
-                            span_bug!(span, "WF predicate not satisfied for {:?}", ty);
+                            span_bug!(
+                                obligation.cause.span_source.to_span(tcx),
+                                "WF predicate not satisfied for {:?}",
+                                ty
+                            );
                         } else {
                             // FIXME: we'll need a better message which takes into account
                             // which bounds actually failed to hold.
                             self.tcx.sess.struct_span_err(
-                                span,
+                                obligation.cause.span_source.to_span(tcx),
                                 &format!("the type `{}` is not well-formed (chalk)", ty),
                             )
                         }
@@ -647,7 +681,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         // `SelectionError::ConstEvalFailure`,
                         // not `Unimplemented`.
                         span_bug!(
-                            span,
+                            obligation.cause.span_source.to_span(tcx),
                             "const-evaluatable requirement gave wrong error: `{:?}`",
                             obligation
                         )
@@ -658,14 +692,14 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         // `SelectionError::ConstEvalFailure`,
                         // not `Unimplemented`.
                         span_bug!(
-                            span,
+                            obligation.cause.span_source.to_span(tcx),
                             "const-equate requirement gave wrong error: `{:?}`",
                             obligation
                         )
                     }
 
                     ty::PredicateAtom::TypeWellFormedFromEnv(..) => span_bug!(
-                        span,
+                        obligation.cause.span_source.to_span(tcx),
                         "TypeWellFormedFromEnv predicate should only exist in the environment"
                     ),
                 }
@@ -694,13 +728,19 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     .and_then(|did| self.tcx.hir().span_if_local(did))
                     .map(|sp| self.tcx.sess.source_map().guess_head_span(sp)); // the sp could be an fn def
 
-                if self.reported_closure_mismatch.borrow().contains(&(span, found_span)) {
+                if self
+                    .reported_closure_mismatch
+                    .borrow()
+                    .contains(&(obligation.cause.span_source.to_span(tcx), found_span))
+                {
                     // We check closures twice, with obligations flowing in different directions,
                     // but we want to complain about them only once.
                     return;
                 }
 
-                self.reported_closure_mismatch.borrow_mut().insert((span, found_span));
+                self.reported_closure_mismatch
+                    .borrow_mut()
+                    .insert((obligation.cause.span_source.to_span(tcx), found_span));
 
                 let found = match found_trait_ref.skip_binder().substs.type_at(1).kind() {
                     ty::Tuple(ref tys) => vec![ArgKind::empty(); tys.len()],
@@ -711,14 +751,19 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                 let expected = match expected_ty.kind() {
                     ty::Tuple(ref tys) => tys
                         .iter()
-                        .map(|t| ArgKind::from_expected_ty(t.expect_ty(), Some(span)))
+                        .map(|t| {
+                            ArgKind::from_expected_ty(
+                                t.expect_ty(),
+                                Some(obligation.cause.span_source.to_span(tcx)),
+                            )
+                        })
                         .collect(),
                     _ => vec![ArgKind::Arg("_".to_owned(), expected_ty.to_string())],
                 };
 
                 if found.len() == expected.len() {
                     self.report_closure_arg_mismatch(
-                        span,
+                        obligation.cause.span_source.to_span(tcx),
                         found_span,
                         found_trait_ref,
                         expected_trait_ref,
@@ -733,7 +778,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         .unwrap_or((found_span, found));
 
                     self.report_arg_count_mismatch(
-                        span,
+                        obligation.cause.span_source.to_span(tcx),
                         closure_span,
                         expected,
                         found,
@@ -744,7 +789,12 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
 
             TraitNotObjectSafe(did) => {
                 let violations = self.tcx.object_safety_violations(did);
-                report_object_safety_error(self.tcx, span, did, violations)
+                report_object_safety_error(
+                    self.tcx,
+                    obligation.cause.span_source.to_span(tcx),
+                    did,
+                    violations,
+                )
             }
             ConstEvalFailure(ErrorHandled::TooGeneric) => {
                 bug!("too generic should have been handled in `is_const_evaluatable`");
@@ -752,7 +802,10 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
             // Already reported in the query.
             ConstEvalFailure(ErrorHandled::Reported(ErrorReported)) => {
                 // FIXME(eddyb) remove this once `ErrorReported` becomes a proof token.
-                self.tcx.sess.delay_span_bug(span, "`ErrorReported` without an error");
+                self.tcx.sess.delay_span_bug(
+                    obligation.cause.span_source.to_span(tcx),
+                    "`ErrorReported` without an error",
+                );
                 return;
             }
 
@@ -760,7 +813,10 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
             // This shouldn't actually happen for constants used in types, modulo
             // bugs. The `delay_span_bug` here ensures it won't be ignored.
             ConstEvalFailure(ErrorHandled::Linted) => {
-                self.tcx.sess.delay_span_bug(span, "constant in type had error reported as lint");
+                self.tcx.sess.delay_span_bug(
+                    obligation.cause.span_source.to_span(tcx),
+                    "constant in type had error reported as lint",
+                );
                 return;
             }
 
@@ -1176,7 +1232,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             if let ty::PredicateAtom::Projection(data) = bound_predicate.skip_binder() {
                 let mut selcx = SelectionContext::new(self);
                 let (data, _) = self.replace_bound_vars_with_fresh_vars(
-                    obligation.cause.span,
+                    obligation.cause.span_source,
                     infer::LateBoundRegionConversionTime::HigherRankedType,
                     &bound_predicate.rebind(data),
                 );
@@ -1224,12 +1280,16 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             }
 
             let msg = format!("type mismatch resolving `{}`", predicate);
-            let error_id = (DiagnosticMessageId::ErrorId(271), Some(obligation.cause.span), msg);
+            let error_id = (
+                DiagnosticMessageId::ErrorId(271),
+                Some(obligation.cause.span_source.to_span(self.tcx)),
+                msg,
+            );
             let fresh = self.tcx.sess.one_time_diagnostics.borrow_mut().insert(error_id);
             if fresh {
                 let mut diag = struct_span_err!(
                     self.tcx.sess,
-                    obligation.cause.span,
+                    obligation.cause.span_source.to_span(self.tcx),
                     E0271,
                     "type mismatch resolving `{}`",
                     predicate
@@ -1446,7 +1506,6 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         // coherence violation, so we don't report it here.
 
         let predicate = self.resolve_vars_if_possible(&obligation.predicate);
-        let span = obligation.cause.span;
 
         debug!(
             "maybe_report_ambiguity(predicate={:?}, obligation={:?} body_id={:?}, code={:?})",
@@ -1504,6 +1563,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                 // avoid inundating the user with unnecessary errors, but we now
                 // check upstream for type errors and don't add the obligations to
                 // begin with in those cases.
+                let span = obligation.cause.span_source.to_span(self.tcx);
                 if self.tcx.lang_items().sized_trait() == Some(trait_ref.def_id()) {
                     self.emit_inference_failure_err(body_id, span, subst, ErrorCode::E0282).emit();
                     return;
@@ -1573,6 +1633,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                     return;
                 }
 
+                let span = obligation.cause.span_source.to_span(self.tcx);
                 self.emit_inference_failure_err(body_id, span, arg, ErrorCode::E0282)
             }
 
@@ -1584,6 +1645,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                 let SubtypePredicate { a_is_expected: _, a, b } = data;
                 // both must be type variables, or the other would've been instantiated
                 assert!(a.is_ty_var() && b.is_ty_var());
+                let span = obligation.cause.span_source.to_span(self.tcx);
                 self.emit_inference_failure_err(body_id, span, a.into(), ErrorCode::E0282)
             }
             ty::PredicateAtom::Projection(data) => {
@@ -1593,6 +1655,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                 if predicate.references_error() {
                     return;
                 }
+                let span = obligation.cause.span_source.to_span(self.tcx);
                 if self_ty.needs_infer() && ty.needs_infer() {
                     // We do this for the `foo.collect()?` case to produce a suggestion.
                     let mut err = self.emit_inference_failure_err(
@@ -1620,6 +1683,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                 if self.tcx.sess.has_errors() {
                     return;
                 }
+                let span = obligation.cause.span_source.to_span(self.tcx);
                 let mut err = struct_span_err!(
                     self.tcx.sess,
                     span,
@@ -1658,7 +1722,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
                     self.var_map.entry(ty).or_insert_with(|| {
                         infcx.next_ty_var(TypeVariableOrigin {
                             kind: TypeVariableOriginKind::TypeParameterDefinition(name, None),
-                            span: DUMMY_SP,
+                            span_source: SpanSource::DUMMY,
                         })
                     })
                 } else {

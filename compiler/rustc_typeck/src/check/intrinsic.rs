@@ -10,6 +10,7 @@ use crate::require_same_types;
 use rustc_errors::struct_span_err;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::traits::{ObligationCause, ObligationCauseCode};
 use rustc_middle::ty::subst::Subst;
 use rustc_middle::ty::{self, Ty, TyCtxt};
@@ -60,7 +61,11 @@ fn equate_intrinsic_type<'tcx>(
         safety,
         abi,
     )));
-    let cause = ObligationCause::new(it.span, it.hir_id, ObligationCauseCode::IntrinsicType);
+    let cause = ObligationCause::new(
+        SpanSource::Span(it.span),
+        it.hir_id,
+        ObligationCauseCode::IntrinsicType,
+    );
     require_same_types(tcx, &cause, tcx.mk_fn_ptr(tcx.fn_sig(def_id)), fty);
 }
 
