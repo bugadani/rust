@@ -23,7 +23,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         base_ty: Ty<'tcx>,
         overloaded_span_source: SpanSource,
     ) -> Autoderef<'a, 'tcx> {
-        Autoderef::new(self, self.param_env, self.body_id, span_source, base_ty, overloaded_span_source)
+        Autoderef::new(
+            self,
+            self.param_env,
+            self.body_id,
+            span_source,
+            base_ty,
+            overloaded_span_source,
+        )
     }
 
     pub fn try_overloaded_deref(

@@ -796,7 +796,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let method = trait_did.and_then(|trait_did| {
             let opname = Ident::with_dummy_span(opname);
-            self.lookup_method_in_trait(span, opname, trait_did, lhs_ty, Some(other_tys))
+            self.lookup_method_in_trait(
+                SpanSource::Span(span),
+                opname,
+                trait_did,
+                lhs_ty,
+                Some(other_tys),
+            )
         });
 
         match method {

@@ -9,6 +9,7 @@ mod structural_impls;
 pub mod util;
 
 use rustc_hir as hir;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::error::{ExpectedFound, TypeError};
 use rustc_middle::ty::{self, Const, Ty};
 use rustc_span::Span;
@@ -106,6 +107,19 @@ impl<'tcx, O> Obligation<'tcx, O> {
         trait_ref: O,
     ) -> Obligation<'tcx, O> {
         Obligation::new(ObligationCause::misc(span, body_id), param_env, trait_ref)
+    }
+
+    pub fn misc_with_span_source(
+        span_source: SpanSource,
+        body_id: hir::HirId,
+        param_env: ty::ParamEnv<'tcx>,
+        trait_ref: O,
+    ) -> Obligation<'tcx, O> {
+        Obligation::new(
+            ObligationCause::new(span_source, body_id, ObligationCauseCode::MiscObligation),
+            param_env,
+            trait_ref,
+        )
     }
 
     pub fn with<P>(&self, value: P) -> Obligation<'tcx, P> {

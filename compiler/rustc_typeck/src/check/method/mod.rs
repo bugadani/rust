@@ -305,7 +305,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     // of this method is basically the same as confirmation.
     pub fn lookup_method_in_trait(
         &self,
-        span: Span,
+        span_source: SpanSource,
         m_name: Ident,
         trait_def_id: DefId,
         self_ty: Ty<'tcx>,
@@ -328,15 +328,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
                 }
             }
-            self.var_for_def(SpanSource::Span(span), param)
+            self.var_for_def(span_source, param)
         });
 
         let trait_ref = ty::TraitRef::new(trait_def_id, substs);
 
         // Construct an obligation
         let poly_trait_ref = trait_ref.to_poly_trait_ref();
-        let obligation = traits::Obligation::misc(
-            span,
+        let obligation = traits::Obligation::misc_with_span_source(
+            span_source,
             self.body_id,
             self.param_env,
             poly_trait_ref.without_const().to_predicate(self.tcx),
@@ -355,7 +355,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             Some(method_item) => method_item,
             None => {
                 tcx.sess.delay_span_bug(
-                    span,
+                    span_source.to_span(tcx),
                     "operator trait does not have corresponding operator method",
                 );
                 return None;
@@ -375,13 +375,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // `instantiate_type_scheme` can normalize associated types that
         // may reference those regions.
         let fn_sig = tcx.fn_sig(def_id);
-        let fn_sig = self
-            .replace_bound_vars_with_fresh_vars(SpanSource::Span(span), infer::FnCall, &fn_sig)
-            .0;
+        let fn_sig = self.replace_bound_vars_with_fresh_vars(span_source, infer::FnCall, &fn_sig).0;
         let fn_sig = fn_sig.subst(self.tcx, substs);
 
         let InferOk { value, obligations: o } =
-            self.normalize_associated_types_in_as_infer_ok(span, &fn_sig);
+            self.normalize_associated_types_in_as_infer_ok(span_source.to_span(tcx), &fn_sig); //FIXME
         let fn_sig = {
             obligations.extend(o);
             value
@@ -398,7 +396,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let bounds = self.tcx.predicates_of(def_id).instantiate(self.tcx, substs);
 
         let InferOk { value, obligations: o } =
-            self.normalize_associated_types_in_as_infer_ok(span, &bounds);
+            self.normalize_associated_types_in_as_infer_ok(span_source.to_span(tcx), &bounds); //FIXME
         let bounds = {
             obligations.extend(o);
             value
@@ -406,7 +404,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         assert!(!bounds.has_escaping_bound_vars());
 
-        let cause = traits::ObligationCause::misc(span, self.body_id);
+        let cause = traits::ObligationCause::new(
+            span_source,
+            self.body_id,
+            traits::ObligationCauseCode::MiscObligation,
+        );
         obligations.extend(traits::predicates_for_generics(cause.clone(), self.param_env, bounds));
 
         // Also add an obligation for the method type being well-formed.

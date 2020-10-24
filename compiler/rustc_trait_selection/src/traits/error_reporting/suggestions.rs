@@ -484,7 +484,14 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         };
 
         if let ty::Ref(region, base_ty, mutbl) = *real_ty.kind() {
-            let mut autoderef = Autoderef::new(self, param_env, body_id, obligation.cause.span_source, base_ty, obligation.cause.span_source);
+            let mut autoderef = Autoderef::new(
+                self,
+                param_env,
+                body_id,
+                obligation.cause.span_source,
+                base_ty,
+                obligation.cause.span_source,
+            );
             if let Some(steps) = autoderef.find_map(|(ty, steps)| {
                 // Re-add the `&`
                 let ty = self.tcx.mk_ref(region, TypeAndMut { ty, mutbl });
@@ -493,7 +500,12 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                 Some(steps).filter(|_| self.predicate_may_hold(&obligation))
             }) {
                 if steps > 0 {
-                    if let Ok(src) = self.tcx.sess.source_map().span_to_snippet(obligation.cause.span_source.to_span(self.tcx)) {
+                    if let Ok(src) = self
+                        .tcx
+                        .sess
+                        .source_map()
+                        .span_to_snippet(obligation.cause.span_source.to_span(self.tcx))
+                    {
                         // Don't care about `&mut` because `DerefMut` is used less
                         // often and user will not expect autoderef happens.
                         if src.starts_with('&') && !src.starts_with("&mut ") {

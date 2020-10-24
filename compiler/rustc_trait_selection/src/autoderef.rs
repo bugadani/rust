@@ -56,11 +56,7 @@ impl<'a, 'tcx> Iterator for Autoderef<'a, 'tcx> {
         // If we have reached the recursion limit, error gracefully.
         if !tcx.sess.recursion_limit().value_within_limit(self.state.steps.len()) {
             if !self.silence_errors {
-                report_autoderef_recursion_limit_error(
-                    tcx,
-                    self.span_source,
-                    self.state.cur_ty,
-                );
+                report_autoderef_recursion_limit_error(tcx, self.span_source, self.state.cur_ty);
             }
             self.state.reached_recursion_limit = true;
             return None;
@@ -135,7 +131,11 @@ impl<'a, 'tcx> Autoderef<'a, 'tcx> {
             substs: tcx.mk_substs_trait(ty, &[]),
         };
 
-        let cause = traits::ObligationCause::new(self.span_source, self.body_id, traits::ObligationCauseCode::MiscObligation);
+        let cause = traits::ObligationCause::new(
+            self.span_source,
+            self.body_id,
+            traits::ObligationCauseCode::MiscObligation,
+        );
 
         let obligation = traits::Obligation::new(
             cause.clone(),

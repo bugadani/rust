@@ -456,9 +456,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the method name is the name of a field with a function or closure type,
                 // give a helping note that it has to be called as `(x.f)(...)`.
                 if let SelfSource::MethodCall(expr) = source {
-                    let field_receiver = self
-                        .autoderef(span_source, rcvr_ty)
-                        .find_map(|(ty, _)| match ty.kind() {
+                    let field_receiver =
+                        self.autoderef(span_source, rcvr_ty).find_map(|(ty, _)| match ty.kind() {
                             ty::Adt(def, substs) if !def.is_enum() => {
                                 let variant = &def.non_enum_variant();
                                 self.tcx.find_field_index(item_name, variant).map(|index| {

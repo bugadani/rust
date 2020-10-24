@@ -216,7 +216,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let opt_input_types = opt_input_types.as_ref().map(AsRef::as_ref);
 
             if let Some(ok) = self.lookup_method_in_trait(
-                call_expr.span,
+                SpanSource::Span(call_expr.span),
                 method_name,
                 trait_def_id,
                 adjusted_ty,
