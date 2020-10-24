@@ -112,7 +112,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     ) -> bool {
         let mode = probe::Mode::MethodCall;
         match self.probe_for_name(
-            method_name.span,
+            SpanSource::Span(method_name.span),
             mode,
             method_name,
             IsSuggestion(false),
@@ -140,7 +140,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     ) {
         let params = self
             .probe_for_name(
-                method_name.span,
+                SpanSource::Span(method_name.span),
                 probe::Mode::MethodCall,
                 method_name,
                 IsSuggestion(false),
@@ -182,7 +182,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         &self,
         self_ty: Ty<'tcx>,
         segment: &hir::PathSegment<'_>,
-        span: Span,
+        span_source: SpanSource,
         call_expr: &'tcx hir::Expr<'tcx>,
         self_expr: &'tcx hir::Expr<'tcx>,
     ) -> Result<MethodCallee<'tcx>, MethodError<'tcx>> {
@@ -191,8 +191,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             segment.ident, self_ty, call_expr, self_expr
         );
 
-        let pick =
-            self.lookup_probe(span, segment.ident, self_ty, call_expr, ProbeScope::TraitsInScope)?;
+        let pick = self.lookup_probe(
+            span_source,
+            segment.ident,
+            self_ty,
+            call_expr,
+            ProbeScope::TraitsInScope,
+        )?;
 
         for import_id in &pick.import_ids {
             debug!("used_trait_import: {:?}", import_id);
@@ -201,10 +206,21 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 .insert(*import_id);
         }
 
-        self.tcx.check_stability(pick.item.def_id, Some(call_expr.hir_id), span);
+        //FIXME
+        self.tcx.check_stability(
+            pick.item.def_id,
+            Some(call_expr.hir_id),
+            span_source.to_span(self.tcx),
+        );
 
-        let result =
-            self.confirm_method(span, self_expr, call_expr, self_ty, pick.clone(), segment);
+        let result = self.confirm_method(
+            span_source.to_span(self.tcx),
+            self_expr,
+            call_expr,
+            self_ty,
+            pick.clone(),
+            segment,
+        );
 
         if let Some(span) = result.illegal_sized_bound {
             let mut needs_mut = false;
@@ -214,7 +230,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     .mk_ref(region, ty::TypeAndMut { ty: t_type, mutbl: mutability.invert() });
                 // We probe again to see if there might be a borrow mutability discrepancy.
                 match self.lookup_probe(
-                    span,
+                    SpanSource::Span(span),
                     segment.ident,
                     trait_type,
                     call_expr,
@@ -229,7 +245,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             // We probe again, taking all traits into account (not only those in scope).
             let candidates = match self.lookup_probe(
-                span,
+                SpanSource::Span(span),
                 segment.ident,
                 self_ty,
                 call_expr,
@@ -259,7 +275,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub fn lookup_probe(
         &self,
-        span: Span,
+        span_source: SpanSource,
         method_name: Ident,
         self_ty: Ty<'tcx>,
         call_expr: &'tcx hir::Expr<'tcx>,
@@ -268,7 +284,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let mode = probe::Mode::MethodCall;
         let self_ty = self.resolve_vars_if_possible(&self_ty);
         self.probe_for_name(
-            span,
+            span_source,
             mode,
             method_name,
             IsSuggestion(false),
@@ -414,7 +430,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub fn resolve_ufcs(
         &self,
-        span: Span,
+        span_source: SpanSource,
         method_name: Ident,
         self_ty: Ty<'tcx>,
         expr_id: hir::HirId,
@@ -439,7 +455,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // them as well. It's ok to use the variant's id as a ctor id since an
                     // error will be reported on any use of such resolution anyway.
                     let ctor_def_id = variant_def.ctor_def_id.unwrap_or(variant_def.def_id);
-                    tcx.check_stability(ctor_def_id, Some(expr_id), span);
+                    tcx.check_stability(ctor_def_id, Some(expr_id), span_source.to_span(tcx)); //FIXME
                     return Ok((
                         DefKind::Ctor(CtorOf::Variant, variant_def.ctor_kind),
                         ctor_def_id,
@@ -449,7 +465,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         let pick = self.probe_for_name(
-            span,
+            span_source,
             probe::Mode::Path,
             method_name,
             IsSuggestion(false),
@@ -469,7 +485,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let def_kind = pick.item.kind.as_def_kind();
         debug!("resolve_ufcs: def_kind={:?}, def_id={:?}", def_kind, pick.item.def_id);
-        tcx.check_stability(pick.item.def_id, Some(expr_id), span);
+        tcx.check_stability(pick.item.def_id, Some(expr_id), span_source.to_span(tcx)); //FIXME
         Ok((def_kind, pick.item.def_id))
     }
 

@@ -71,21 +71,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub fn report_method_error<'b>(
         &self,
-        span: Span,
+        span_source: SpanSource,
         rcvr_ty: Ty<'tcx>,
         item_name: Ident,
         source: SelfSource<'b>,
         error: MethodError<'tcx>,
         args: Option<&'tcx [hir::Expr<'tcx>]>,
     ) -> Option<DiagnosticBuilder<'_>> {
-        let orig_span = span;
-        let mut span = span;
         // Avoid suggestions when we don't know what's going on.
         if rcvr_ty.references_error() {
             return None;
         }
 
-        let report_candidates = |span: Span,
+        let report_candidates = |span_source: SpanSource,
                                  err: &mut DiagnosticBuilder<'_>,
                                  mut sources: Vec<CandidateSource>,
                                  sugg_span: Span| {
@@ -118,6 +116,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             .span_if_local(item.def_id)
                             .or_else(|| self.tcx.hir().span_if_local(impl_did));
 
+                        let span = span_source.to_span(self.tcx);
                         let impl_ty = self.tcx.at(span).type_of(impl_did);
 
                         let insertion = match self.tcx.impl_trait_ref(impl_did) {
@@ -233,11 +232,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         };
 
+        let orig_span = span_source.to_span(self.tcx);
         let sugg_span = if let SelfSource::MethodCall(expr) = source {
             // Given `foo.bar(baz)`, `expr` is `bar`, but we want to point to the whole thing.
             self.tcx.hir().expect_expr(self.tcx.hir().get_parent_node(expr.hir_id)).span
         } else {
-            span
+            span_source.to_span(self.tcx)
         };
 
         match error {
@@ -304,7 +304,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     ) {
                         let mut err = struct_span_err!(
                             tcx.sess,
-                            span,
+                            span_source.to_span(tcx),
                             E0689,
                             "can't call {} `{}` on ambiguous numeric type `{}`",
                             item_kind,
@@ -383,10 +383,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         err.emit();
                         return None;
                     } else {
-                        span = item_name.span;
                         let mut err = struct_span_err!(
                             tcx.sess,
-                            span,
+                            item_name.span,
                             E0599,
                             "no {} named `{}` found for {} `{}` in the current scope",
                             item_kind,
@@ -397,12 +396,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         if let Mode::MethodCall = mode {
                             if let SelfSource::MethodCall(call) = source {
                                 self.suggest_await_before_method(
-                                    &mut err, item_name, actual, call, SpanSource::Span(span),
+                                    &mut err,
+                                    item_name,
+                                    actual,
+                                    call,
+                                    SpanSource::Span(item_name.span),
                                 );
                             }
                         }
-                        if let Some(span) =
-                            tcx.sess.confused_type_with_std_module.borrow().get(&span)
+                        if let Some(span) = tcx
+                            .sess
+                            .confused_type_with_std_module
+                            .borrow()
+                            .get(&span_source.to_span(tcx))
                         {
                             if let Ok(snippet) = tcx.sess.source_map().span_to_snippet(*span) {
                                 err.span_suggestion(
@@ -450,8 +456,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the method name is the name of a field with a function or closure type,
                 // give a helping note that it has to be called as `(x.f)(...)`.
                 if let SelfSource::MethodCall(expr) = source {
-                    let field_receiver =
-                        self.autoderef(span, rcvr_ty).find_map(|(ty, _)| match ty.kind() {
+                    // FIXME autoderef
+                    let field_receiver = self
+                        .autoderef(span_source.to_span(self.tcx), rcvr_ty)
+                        .find_map(|(ty, _)| match ty.kind() {
                             ty::Adt(def, substs) if !def.is_enum() => {
                                 let variant = &def.non_enum_variant();
                                 self.tcx.find_field_index(item_name, variant).map(|index| {
@@ -468,7 +476,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         let is_accessible = field.vis.is_accessible_from(scope, self.tcx);
 
                         if is_accessible {
-                            if self.is_fn_ty(&field_ty, span) {
+                            if self.is_fn_ty(&field_ty, span_source.to_span(self.tcx)) {
+                                //FIXME
                                 let expr_span = expr.span.to(item_name.span);
                                 err.multipart_suggestion(
                                     &format!(
@@ -502,15 +511,21 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         let field_kind = if is_accessible { "field" } else { "private field" };
                         err.span_label(item_name.span, format!("{}, not a method", field_kind));
                     } else if lev_candidate.is_none() && static_sources.is_empty() {
-                        err.span_label(span, format!("{} not found in `{}`", item_kind, ty_str));
+                        err.span_label(
+                            span_source.to_span(self.tcx),
+                            format!("{} not found in `{}`", item_kind, ty_str),
+                        );
                         self.tcx.sess.trait_methods_not_found.borrow_mut().insert(orig_span);
                     }
                 } else {
-                    err.span_label(span, format!("{} not found in `{}`", item_kind, ty_str));
+                    err.span_label(
+                        span_source.to_span(self.tcx),
+                        format!("{} not found in `{}`", item_kind, ty_str),
+                    );
                     self.tcx.sess.trait_methods_not_found.borrow_mut().insert(orig_span);
                 }
 
-                if self.is_fn_ty(&rcvr_ty, span) {
+                if self.is_fn_ty(&rcvr_ty, span_source.to_span(self.tcx)) {
                     macro_rules! report_function {
                         ($span:expr, $name:expr) => {
                             err.note(&format!(
@@ -536,7 +551,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         "found the following associated functions; to be used as methods, \
                          functions must have a `self` parameter",
                     );
-                    err.span_label(span, "this is an associated function, not a method");
+                    err.span_label(
+                        span_source.to_span(self.tcx),
+                        "this is an associated function, not a method",
+                    );
                 }
                 if static_sources.len() == 1 {
                     let ty_str = if let Some(CandidateSource::ImplSource(impl_did)) =
@@ -545,7 +563,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         // When the "method" is resolved through dereferencing, we really want the
                         // original type that has the associated function for accurate suggestions.
                         // (#61411)
-                        let ty = tcx.at(span).type_of(*impl_did);
+                        let ty = tcx.at(span_source.to_span(self.tcx)).type_of(*impl_did);
                         match (&ty.peel_refs().kind(), &actual.peel_refs().kind()) {
                             (ty::Adt(def, _), ty::Adt(def_actual, _)) if def == def_actual => {
                                 // Use `actual` as it will have more `substs` filled in.
@@ -558,7 +576,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     };
                     if let SelfSource::MethodCall(expr) = source {
                         err.span_suggestion(
-                            expr.span.to(span),
+                            expr.span.to(span_source.to_span(self.tcx)),
                             "use associated function syntax instead",
                             format!("{}::{}", ty_str, item_name),
                             Applicability::MachineApplicable,
@@ -567,9 +585,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         err.help(&format!("try with `{}::{}`", ty_str, item_name,));
                     }
 
-                    report_candidates(span, &mut err, static_sources, sugg_span);
+                    report_candidates(span_source, &mut err, static_sources, sugg_span);
                 } else if static_sources.len() > 1 {
-                    report_candidates(span, &mut err, static_sources, sugg_span);
+                    report_candidates(span_source, &mut err, static_sources, sugg_span);
                 }
 
                 let mut restrict_type_params = false;
@@ -734,7 +752,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 } else {
                     self.suggest_traits_to_import(
                         &mut err,
-                        span,
+                        span_source.to_span(self.tcx),
                         rcvr_ty,
                         item_name,
                         source,
@@ -751,7 +769,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         None,
                     ) {
                         err.span_suggestion(
-                            span,
+                            span_source.to_span(self.tcx),
                             "there is a variant with a similar name",
                             suggestion.to_string(),
                             Applicability::MaybeIncorrect,
@@ -776,12 +794,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }
                     }
                     if fallback_span {
-                        err.span_label(span, msg);
+                        err.span_label(span_source.to_span(self.tcx), msg);
                     }
                 } else if let Some(lev_candidate) = lev_candidate {
                     let def_kind = lev_candidate.kind.as_def_kind();
                     err.span_suggestion(
-                        span,
+                        span_source.to_span(self.tcx),
                         &format!(
                             "there is {} {} with a similar name",
                             def_kind.article(),
@@ -804,7 +822,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 );
                 err.span_label(item_name.span, format!("multiple `{}` found", item_name));
 
-                report_candidates(span, &mut err, sources, sugg_span);
+                report_candidates(span_source, &mut err, sources, sugg_span);
                 err.emit();
             }
 
@@ -825,6 +843,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             MethodError::IllegalSizedBound(candidates, needs_mut, bound_span) => {
                 let msg = format!("the `{}` method cannot be invoked on a trait object", item_name);
+                let span = span_source.to_span(self.tcx);
                 let mut err = self.sess().struct_span_err(span, &msg);
                 err.span_label(bound_span, "this has a `Sized` requirement");
                 if !candidates.is_empty() {

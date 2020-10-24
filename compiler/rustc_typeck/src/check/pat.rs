@@ -85,7 +85,11 @@ struct TopInfo<'tcx> {
 }
 
 impl<'tcx> FnCtxt<'_, 'tcx> {
-    fn pattern_cause(&self, ti: TopInfo<'tcx>, cause_span_source: SpanSource) -> ObligationCause<'tcx> {
+    fn pattern_cause(
+        &self,
+        ti: TopInfo<'tcx>,
+        cause_span_source: SpanSource,
+    ) -> ObligationCause<'tcx> {
         let code = Pattern {
             span_source: ti.span_source,
             root_ty: ti.expected,
@@ -111,7 +115,8 @@ impl<'tcx> FnCtxt<'_, 'tcx> {
         actual: Ty<'tcx>,
         ti: TopInfo<'tcx>,
     ) {
-        if let Some(mut err) = self.demand_eqtype_pat_diag(cause_span_source, expected, actual, ti) {
+        if let Some(mut err) = self.demand_eqtype_pat_diag(cause_span_source, expected, actual, ti)
+        {
             err.emit();
         }
     }
@@ -164,7 +169,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         debug!("check_pat(pat={:?},expected={:?},def_bm={:?})", pat, expected, def_bm);
 
         let path_res = match &pat.kind {
-            PatKind::Path(qpath) => Some(self.resolve_ty_and_res_ufcs(qpath, pat.hir_id, pat.span)),
+            PatKind::Path(qpath) => {
+                Some(self.resolve_ty_and_res_ufcs(qpath, pat.hir_id, SpanSource::Span(pat.span)))
+            }
             _ => None,
         };
         let adjust_mode = self.calc_adjust_mode(pat, path_res.map(|(res, ..)| res));
@@ -173,7 +180,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let ty = match pat.kind {
             PatKind::Wild => expected,
             PatKind::Lit(lt) => self.check_pat_lit(SpanSource::Span(pat.span), lt, expected, ti),
-            PatKind::Range(lhs, rhs, _) => self.check_pat_range(SpanSource::Span(pat.span), lhs, rhs, expected, ti),
+            PatKind::Range(lhs, rhs, _) => {
+                self.check_pat_range(SpanSource::Span(pat.span), lhs, rhs, expected, ti)
+            }
             PatKind::Binding(ba, var_id, _, sub) => {
                 self.check_pat_ident(pat, ba, var_id, sub, expected, def_bm, ti)
             }
@@ -191,16 +200,29 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
                 expected
             }
-            PatKind::Tuple(elements, ddpos) => {
-                self.check_pat_tuple(SpanSource::Span(pat.span), elements, ddpos, expected, def_bm, ti)
+            PatKind::Tuple(elements, ddpos) => self.check_pat_tuple(
+                SpanSource::Span(pat.span),
+                elements,
+                ddpos,
+                expected,
+                def_bm,
+                ti,
+            ),
+            PatKind::Box(inner) => {
+                self.check_pat_box(SpanSource::Span(pat.span), inner, expected, def_bm, ti)
             }
-            PatKind::Box(inner) => self.check_pat_box(SpanSource::Span(pat.span), inner, expected, def_bm, ti),
             PatKind::Ref(inner, mutbl) => {
                 self.check_pat_ref(pat, inner, mutbl, expected, def_bm, ti)
             }
-            PatKind::Slice(before, slice, after) => {
-                self.check_pat_slice(SpanSource::Span(pat.span), before, slice, after, expected, def_bm, ti)
-            }
+            PatKind::Slice(before, slice, after) => self.check_pat_slice(
+                SpanSource::Span(pat.span),
+                before,
+                slice,
+                after,
+                expected,
+                def_bm,
+                ti,
+            ),
         };
 
         self.write_ty(pat.hir_id, ty);
@@ -479,7 +501,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         common_type
     }
 
-    fn endpoint_has_type(&self, err: &mut DiagnosticBuilder<'_>, span_source: SpanSource, ty: Ty<'_>) {
+    fn endpoint_has_type(
+        &self,
+        err: &mut DiagnosticBuilder<'_>,
+        span_source: SpanSource,
+        ty: Ty<'_>,
+    ) {
         if !ty.references_error() {
             err.span_label(span_source.to_span(self.tcx), &format!("this is of type `{}`", ty));
         }
@@ -495,7 +522,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             (Some((true, ..)), Some((true, ..))) => span_source,
             (Some((true, _, sp)), _) => sp,
             (_, Some((true, _, sp))) => sp,
-            _ => span_bug!(span_source.to_span(self.tcx), "emit_err_pat_range: no side failed or exists but still error?"),
+            _ => span_bug!(
+                span_source.to_span(self.tcx),
+                "emit_err_pat_range: no side failed or exists but still error?"
+            ),
         };
         let mut err = struct_span_err!(
             self.tcx.sess,
@@ -504,12 +534,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             "only `char` and numeric types are allowed in range patterns"
         );
         let msg = |ty| format!("this is of type `{}` but it should be `char` or numeric", ty);
-        let mut one_side_err = |first_span: SpanSource, first_ty, second: Option<(bool, Ty<'tcx>, SpanSource)>| {
-            err.span_label(first_span.to_span(self.tcx), &msg(first_ty));
-            if let Some((_, ty, sp)) = second {
-                self.endpoint_has_type(&mut err, sp, ty);
-            }
-        };
+        let mut one_side_err =
+            |first_span: SpanSource, first_ty, second: Option<(bool, Ty<'tcx>, SpanSource)>| {
+                err.span_label(first_span.to_span(self.tcx), &msg(first_ty));
+                if let Some((_, ty, sp)) = second {
+                    self.endpoint_has_type(&mut err, sp, ty);
+                }
+            };
         match (lhs, rhs) {
             (Some((true, lhs_ty, lhs_sp)), Some((true, rhs_ty, rhs_sp))) => {
                 err.span_label(lhs_sp.to_span(self.tcx), &msg(lhs_ty));
@@ -645,7 +676,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn check_dereferenceable(&self, span_source: SpanSource, expected: Ty<'tcx>, inner: &Pat<'_>) -> bool {
+    pub fn check_dereferenceable(
+        &self,
+        span_source: SpanSource,
+        expected: Ty<'tcx>,
+        inner: &Pat<'_>,
+    ) -> bool {
         if let PatKind::Binding(..) = inner.kind {
             if let Some(mt) = self.shallow_resolve(expected).builtin_deref(true) {
                 if let ty::Dynamic(..) = mt.ty.kind() {
@@ -740,10 +776,20 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Type-check the path.
         let (pat_ty, pat_res) =
             self.instantiate_value_path(segments, opt_ty, res, pat.span, pat.hir_id);
-        if let Some(err) =
-            self.demand_suptype_with_origin(&self.pattern_cause(ti, SpanSource::Span(pat.span)), expected, pat_ty)
-        {
-            self.emit_bad_pat_path(err, SpanSource::Span(pat.span), res, pat_res, pat_ty, segments, ti.parent_pat);
+        if let Some(err) = self.demand_suptype_with_origin(
+            &self.pattern_cause(ti, SpanSource::Span(pat.span)),
+            expected,
+            pat_ty,
+        ) {
+            self.emit_bad_pat_path(
+                err,
+                SpanSource::Span(pat.span),
+                res,
+                pat_res,
+                pat_ty,
+                segments,
+                ti.parent_pat,
+            );
         }
         pat_ty
     }
@@ -900,7 +946,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         };
 
         // Resolve the path and check the definition for errors.
-        let (res, opt_ty, segments) = self.resolve_ty_and_res_ufcs(qpath, pat.hir_id, pat.span);
+        let (res, opt_ty, segments) =
+            self.resolve_ty_and_res_ufcs(qpath, pat.hir_id, SpanSource::Span(pat.span));
         if res == Res::Err {
             self.set_tainted_by_errors();
             on_error();
@@ -958,7 +1005,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         } else {
             // Pattern has wrong number of fields.
-            self.e0023(SpanSource::Span(pat.span), res, qpath, subpats, &variant.fields, expected, had_err);
+            self.e0023(
+                SpanSource::Span(pat.span),
+                res,
+                qpath,
+                subpats,
+                &variant.fields,
+                expected,
+                had_err,
+            );
             on_error();
             return tcx.ty_error();
         }
@@ -1057,7 +1112,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let mut expected_len = elements.len();
         if ddpos.is_some() {
             // Require known type only when `..` is present.
-            if let ty::Tuple(ref tys) = self.structurally_resolved_type(span_source, expected).kind() {
+            if let ty::Tuple(ref tys) =
+                self.structurally_resolved_type(span_source, expected).kind()
+            {
                 expected_len = tys.len();
             }
         }
@@ -1067,10 +1124,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             GenericArg::from(self.next_ty_var(
                 // FIXME: `MiscVariable` for now -- obtaining the span and name information
                 // from all tuple elements isn't trivial.
-                TypeVariableOrigin {
-                    kind: TypeVariableOriginKind::TypeInference,
-                    span_source,
-                },
+                TypeVariableOrigin { kind: TypeVariableOriginKind::TypeInference, span_source },
             ))
         });
         let element_tys = tcx.mk_substs(element_tys_iter);
@@ -1128,7 +1182,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let ident = tcx.adjust_ident(field.ident, variant.def_id);
             let field_ty = match used_fields.entry(ident) {
                 Occupied(occupied) => {
-                    self.error_field_already_bound(SpanSource::Span(span), field.ident, *occupied.get());
+                    self.error_field_already_bound(
+                        SpanSource::Span(span),
+                        field.ident,
+                        *occupied.get(),
+                    );
                     no_field_errors = false;
                     tcx.ty_error()
                 }
@@ -1245,7 +1303,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         err.emit();
     }
 
-    fn error_field_already_bound(&self, span_source: SpanSource, ident: Ident, other_field: SpanSource) {
+    fn error_field_already_bound(
+        &self,
+        span_source: SpanSource,
+        ident: Ident,
+        other_field: SpanSource,
+    ) {
         let span = span_source.to_span(self.tcx);
         struct_span_err!(
             self.tcx.sess,
@@ -1561,44 +1624,55 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     ) -> Ty<'tcx> {
         let tcx = self.tcx;
         let expected = self.shallow_resolve(expected);
-        let (rptr_ty, inner_ty) = if self.check_dereferenceable(SpanSource::Span(pat.span), expected, &inner) {
-            // `demand::subtype` would be good enough, but using `eqtype` turns
-            // out to be equally general. See (note_1) for details.
+        let (rptr_ty, inner_ty) =
+            if self.check_dereferenceable(SpanSource::Span(pat.span), expected, &inner) {
+                // `demand::subtype` would be good enough, but using `eqtype` turns
+                // out to be equally general. See (note_1) for details.
 
-            // Take region, inner-type from expected type if we can,
-            // to avoid creating needless variables. This also helps with
-            // the bad  interactions of the given hack detailed in (note_1).
-            debug!("check_pat_ref: expected={:?}", expected);
-            match *expected.kind() {
-                ty::Ref(_, r_ty, r_mutbl) if r_mutbl == mutbl => (expected, r_ty),
-                _ => {
-                    let inner_ty = self.next_ty_var(TypeVariableOrigin {
-                        kind: TypeVariableOriginKind::TypeInference,
-                        span_source: SpanSource::Span(inner.span),
-                    });
-                    let rptr_ty = self.new_ref_ty(SpanSource::Span(pat.span), mutbl, inner_ty);
-                    debug!("check_pat_ref: demanding {:?} = {:?}", expected, rptr_ty);
-                    let err = self.demand_eqtype_pat_diag(SpanSource::Span(pat.span), expected, rptr_ty, ti);
+                // Take region, inner-type from expected type if we can,
+                // to avoid creating needless variables. This also helps with
+                // the bad  interactions of the given hack detailed in (note_1).
+                debug!("check_pat_ref: expected={:?}", expected);
+                match *expected.kind() {
+                    ty::Ref(_, r_ty, r_mutbl) if r_mutbl == mutbl => (expected, r_ty),
+                    _ => {
+                        let inner_ty = self.next_ty_var(TypeVariableOrigin {
+                            kind: TypeVariableOriginKind::TypeInference,
+                            span_source: SpanSource::Span(inner.span),
+                        });
+                        let rptr_ty = self.new_ref_ty(SpanSource::Span(pat.span), mutbl, inner_ty);
+                        debug!("check_pat_ref: demanding {:?} = {:?}", expected, rptr_ty);
+                        let err = self.demand_eqtype_pat_diag(
+                            SpanSource::Span(pat.span),
+                            expected,
+                            rptr_ty,
+                            ti,
+                        );
 
-                    // Look for a case like `fn foo(&foo: u32)` and suggest
-                    // `fn foo(foo: &u32)`
-                    if let Some(mut err) = err {
-                        self.borrow_pat_suggestion(&mut err, &pat, &inner, &expected);
-                        err.emit();
+                        // Look for a case like `fn foo(&foo: u32)` and suggest
+                        // `fn foo(foo: &u32)`
+                        if let Some(mut err) = err {
+                            self.borrow_pat_suggestion(&mut err, &pat, &inner, &expected);
+                            err.emit();
+                        }
+                        (rptr_ty, inner_ty)
                     }
-                    (rptr_ty, inner_ty)
                 }
-            }
-        } else {
-            let err = tcx.ty_error();
-            (err, err)
-        };
+            } else {
+                let err = tcx.ty_error();
+                (err, err)
+            };
         self.check_pat(&inner, inner_ty, def_bm, TopInfo { parent_pat: Some(&pat), ..ti });
         rptr_ty
     }
 
     /// Create a reference type with a fresh region variable.
-    fn new_ref_ty(&self, span_source: SpanSource, mutbl: hir::Mutability, ty: Ty<'tcx>) -> Ty<'tcx> {
+    fn new_ref_ty(
+        &self,
+        span_source: SpanSource,
+        mutbl: hir::Mutability,
+        ty: Ty<'tcx>,
+    ) -> Ty<'tcx> {
         let region = self.next_region_var(infer::PatternRegion(span_source));
         let mt = ty::TypeAndMut { ty, mutbl };
         self.tcx.mk_ref(region, mt)
@@ -1712,7 +1786,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         (Some(self.tcx.ty_error()), arr_ty)
     }
 
-    fn error_scrutinee_inconsistent_length(&self, span_source: SpanSource, min_len: u64, size: u64) {
+    fn error_scrutinee_inconsistent_length(
+        &self,
+        span_source: SpanSource,
+        min_len: u64,
+        size: u64,
+    ) {
         let span = span_source.to_span(self.tcx);
         struct_span_err!(
             self.tcx.sess,
@@ -1727,7 +1806,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         .emit();
     }
 
-    fn error_scrutinee_with_rest_inconsistent_length(&self, span_source: SpanSource, min_len: u64, size: u64) {
+    fn error_scrutinee_with_rest_inconsistent_length(
+        &self,
+        span_source: SpanSource,
+        min_len: u64,
+        size: u64,
+    ) {
         let span = span_source.to_span(self.tcx);
         struct_span_err!(
             self.tcx.sess,

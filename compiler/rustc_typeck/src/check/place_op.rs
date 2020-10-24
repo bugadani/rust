@@ -75,8 +75,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         autoderef: &Autoderef<'a, 'tcx>,
         index_ty: Ty<'tcx>,
     ) -> Option<(/*index type*/ Ty<'tcx>, /*element type*/ Ty<'tcx>)> {
-        let adjusted_ty =
-            self.structurally_resolved_type(SpanSource::Span(autoderef.span()), autoderef.final_ty(false));
+        let adjusted_ty = self.structurally_resolved_type(
+            SpanSource::Span(autoderef.span()),
+            autoderef.final_ty(false),
+        );
         debug!(
             "try_index_step(expr={:?}, base_expr={:?}, adjusted_ty={:?}, \
              index_ty={:?})",

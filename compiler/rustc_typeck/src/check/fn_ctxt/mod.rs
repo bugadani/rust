@@ -141,7 +141,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn cause(&self, span_source: SpanSource, code: ObligationCauseCode<'tcx>) -> ObligationCause<'tcx> {
+    pub fn cause(
+        &self,
+        span_source: SpanSource,
+        code: ObligationCauseCode<'tcx>,
+    ) -> ObligationCause<'tcx> {
         ObligationCause::new(span_source, self.body_id, code)
     }
 

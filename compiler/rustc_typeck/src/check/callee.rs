@@ -66,7 +66,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         expected: Expectation<'tcx>,
     ) -> Ty<'tcx> {
         let original_callee_ty = self.check_expr(callee_expr);
-        let expr_ty = self.structurally_resolved_type(SpanSource::Span(call_expr.span), original_callee_ty);
+        let expr_ty =
+            self.structurally_resolved_type(SpanSource::Span(call_expr.span), original_callee_ty);
 
         let mut autoderef = self.autoderef(callee_expr.span, expr_ty);
         let mut result = None;
@@ -107,8 +108,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         arg_exprs: &'tcx [hir::Expr<'tcx>],
         autoderef: &Autoderef<'a, 'tcx>,
     ) -> Option<CallStep<'tcx>> {
-        let adjusted_ty =
-            self.structurally_resolved_type(SpanSource::Span(autoderef.span()), autoderef.final_ty(false));
+        let adjusted_ty = self.structurally_resolved_type(
+            SpanSource::Span(autoderef.span()),
+            autoderef.final_ty(false),
+        );
         debug!(
             "try_overloaded_call_step(call_expr={:?}, adjusted_ty={:?})",
             call_expr, adjusted_ty
@@ -418,13 +421,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Call the generic checker.
         let expected_arg_tys = self.expected_inputs_for_expected_output(
-            call_expr.span,
+            SpanSource::Span(call_expr.span),
             expected,
             fn_sig.output(),
             fn_sig.inputs(),
         );
         self.check_argument_types(
-            call_expr.span,
+            SpanSource::Span(call_expr.span),
             call_expr,
             fn_sig.inputs(),
             &expected_arg_tys[..],
@@ -450,14 +453,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // type.
 
         let expected_arg_tys = self.expected_inputs_for_expected_output(
-            call_expr.span,
+            SpanSource::Span(call_expr.span),
             expected,
             fn_sig.output().clone(),
             fn_sig.inputs(),
         );
 
         self.check_argument_types(
-            call_expr.span,
+            SpanSource::Span(call_expr.span),
             call_expr,
             fn_sig.inputs(),
             &expected_arg_tys,
@@ -478,7 +481,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         method_callee: MethodCallee<'tcx>,
     ) -> Ty<'tcx> {
         let output_type = self.check_method_argument_types(
-            call_expr.span,
+            SpanSource::Span(call_expr.span),
             call_expr,
             Ok(method_callee),
             arg_exprs,
@@ -527,10 +530,18 @@ impl<'a, 'tcx> DeferredCallResolution<'tcx> {
                 for (method_arg_ty, self_arg_ty) in
                     method_sig.inputs().iter().skip(1).zip(self.fn_sig.inputs())
                 {
-                    fcx.demand_eqtype(SpanSource::Span(self.call_expr.span), &self_arg_ty, &method_arg_ty);
+                    fcx.demand_eqtype(
+                        SpanSource::Span(self.call_expr.span),
+                        &self_arg_ty,
+                        &method_arg_ty,
+                    );
                 }
 
-                fcx.demand_eqtype(SpanSource::Span(self.call_expr.span), method_sig.output(), self.fn_sig.output());
+                fcx.demand_eqtype(
+                    SpanSource::Span(self.call_expr.span),
+                    method_sig.output(),
+                    self.fn_sig.output(),
+                );
 
                 let mut adjustments = self.adjustments;
                 adjustments.extend(autoref);

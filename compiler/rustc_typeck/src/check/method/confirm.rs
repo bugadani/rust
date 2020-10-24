@@ -153,8 +153,10 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
 
         let mut adjustments = self.adjust_steps(&autoderef);
 
-        let mut target =
-            self.structurally_resolved_type(SpanSource::Span(autoderef.span()), autoderef.final_ty(false));
+        let mut target = self.structurally_resolved_type(
+            SpanSource::Span(autoderef.span()),
+            autoderef.final_ty(false),
+        );
 
         if let Some(mutbl) = pick.autoref {
             let region =

@@ -89,7 +89,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ty = adj_ty;
         }
 
-        if let Some(mut err) = self.demand_suptype_diag(expr.span, expected_ty, ty) {
+        if let Some(mut err) =
+            self.demand_suptype_diag(SpanSource::Span(expr.span), expected_ty, ty)
+        {
             let expr = expr.peel_drop_temps();
             self.suggest_deref_ref_or_into(&mut err, expr, expected_ty, ty, None);
             extend_err(&mut err);
@@ -277,7 +279,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ExprKind::Block(ref body, _) => self.check_block_with_expected(&body, expected),
             ExprKind::Call(ref callee, ref args) => self.check_call(expr, &callee, args, expected),
             ExprKind::MethodCall(ref segment, span, ref args, _) => {
-                self.check_method_call(expr, segment, span, args, expected)
+                self.check_method_call(expr, segment, SpanSource::Span(span), args, expected)
             }
             ExprKind::Cast(ref e, ref t) => self.check_expr_cast(e, t, expr),
             ExprKind::Type(ref e, ref t) => {
@@ -462,7 +464,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     fn check_expr_path(&self, qpath: &hir::QPath<'_>, expr: &'tcx hir::Expr<'tcx>) -> Ty<'tcx> {
         let tcx = self.tcx;
-        let (res, opt_ty, segs) = self.resolve_ty_and_res_ufcs(qpath, expr.hir_id, expr.span);
+        let (res, opt_ty, segs) =
+            self.resolve_ty_and_res_ufcs(qpath, expr.hir_id, SpanSource::Span(expr.span));
         let ty = match res {
             Res::Err => {
                 self.set_tainted_by_errors();
@@ -683,7 +686,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if self.ret_coercion_span.borrow().is_none() {
                 *self.ret_coercion_span.borrow_mut() = Some(expr.span);
             }
-            let cause = self.cause(SpanSource::Span(expr.span), ObligationCauseCode::ReturnNoExpression);
+            let cause =
+                self.cause(SpanSource::Span(expr.span), ObligationCauseCode::ReturnNoExpression);
             if let Some((fn_decl, _)) = self.get_fn_decl(expr.hir_id) {
                 coercion.coerce_forced_unit(
                     self,
@@ -715,7 +719,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let return_expr_ty = self.check_expr_with_hint(return_expr, ret_ty.clone());
         ret_coercion.borrow_mut().coerce(
             self,
-            &self.cause(SpanSource::Span(return_expr.span), ObligationCauseCode::ReturnValue(return_expr.hir_id)),
+            &self.cause(
+                SpanSource::Span(return_expr.span),
+                ObligationCauseCode::ReturnValue(return_expr.hir_id),
+            ),
             return_expr,
             return_expr_ty,
         );
@@ -772,7 +779,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // say that the user intended to write `lhs == rhs` instead of `lhs = rhs`.
             // The likely cause of this is `if foo = bar { .. }`.
             let actual_ty = self.tcx.mk_unit();
-            let mut err = self.demand_suptype_diag(expr.span, expected_ty, actual_ty).unwrap();
+            let mut err = self
+                .demand_suptype_diag(SpanSource::Span(expr.span), expected_ty, actual_ty)
+                .unwrap();
             let lhs_ty = self.check_expr(&lhs);
             let rhs_ty = self.check_expr(&rhs);
             if self.can_coerce(lhs_ty, rhs_ty) {
@@ -877,7 +886,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         &self,
         expr: &'tcx hir::Expr<'tcx>,
         segment: &hir::PathSegment<'_>,
-        span: Span,
+        span_source: SpanSource,
         args: &'tcx [hir::Expr<'tcx>],
         expected: Expectation<'tcx>,
     ) -> Ty<'tcx> {
@@ -886,7 +895,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // no need to check for bot/err -- callee does that
         let rcvr_t = self.structurally_resolved_type(SpanSource::Span(args[0].span), rcvr_t);
 
-        let method = match self.lookup_method(rcvr_t, segment, span, expr, rcvr) {
+        let method = match self.lookup_method(rcvr_t, segment, span_source, expr, rcvr) {
             Ok(method) => {
                 // We could add a "consider `foo::<params>`" suggestion here, but I wasn't able to
                 // trigger this codepath causing `structuraly_resolved_type` to emit an error.
@@ -896,7 +905,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
             Err(error) => {
                 if segment.ident.name != kw::Invalid {
-                    self.report_extended_method_error(segment, span, args, rcvr_t, error);
+                    self.report_extended_method_error(segment, span_source, args, rcvr_t, error);
                 }
                 Err(())
             }
@@ -904,7 +913,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Call the generic checker.
         self.check_method_argument_types(
-            span,
+            span_source,
             expr,
             method,
             &args[1..],
@@ -916,7 +925,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn report_extended_method_error(
         &self,
         segment: &hir::PathSegment<'_>,
-        span: Span,
+        span_source: SpanSource,
         args: &'tcx [hir::Expr<'tcx>],
         rcvr_t: Ty<'tcx>,
         error: MethodError<'tcx>,
@@ -925,7 +934,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let try_alt_rcvr = |err: &mut DiagnosticBuilder<'_>, new_rcvr_t| {
             if let Some(new_rcvr_t) = new_rcvr_t {
                 if let Ok(pick) = self.lookup_probe(
-                    span,
+                    span_source,
                     segment.ident,
                     new_rcvr_t,
                     rcvr,
@@ -946,7 +955,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         };
 
         if let Some(mut err) = self.report_method_error(
-            span,
+            span_source,
             rcvr_t,
             segment.ident,
             SelfSource::MethodCall(rcvr),
@@ -1233,7 +1242,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         ident,
                     });
                 } else {
-                    self.report_unknown_field(adt_ty, variant, field, ast_fields, kind_name, span_source);
+                    self.report_unknown_field(
+                        adt_ty,
+                        variant,
+                        field,
+                        ast_fields,
+                        kind_name,
+                        span_source,
+                    );
                 }
 
                 tcx.ty_error()
@@ -1247,7 +1263,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Make sure the programmer specified correct number of fields.
         if kind_name == "union" {
             if ast_fields.len() != 1 {
-                tcx.sess.span_err(span_source.to_span(tcx), "union expressions should have exactly one field");
+                tcx.sess.span_err(
+                    span_source.to_span(tcx),
+                    "union expressions should have exactly one field",
+                );
             }
         } else if check_completeness && !error_happened && !remaining_fields.is_empty() {
             let no_accessible_remaining_fields = remaining_fields
@@ -1549,7 +1568,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 _ => {}
             }
         }
-        self.structurally_resolved_type(SpanSource::Span(autoderef.span()), autoderef.final_ty(false));
+        self.structurally_resolved_type(
+            SpanSource::Span(autoderef.span()),
+            autoderef.final_ty(false),
+        );
 
         if let Some((did, field_ty)) = private_candidate {
             self.ban_private_field_access(expr, expr_t, field, did);

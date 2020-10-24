@@ -212,7 +212,8 @@ pub fn resolve_interior<'a, 'tcx>(
     );
 
     // Unify the type variable inside the generator with the new witness
-    match fcx.at(&fcx.misc(SpanSource::Span(body.value.span)), fcx.param_env).eq(interior, witness) {
+    match fcx.at(&fcx.misc(SpanSource::Span(body.value.span)), fcx.param_env).eq(interior, witness)
+    {
         Ok(ok) => fcx.register_infer_ok_obligations(ok),
         _ => bug!(),
     }

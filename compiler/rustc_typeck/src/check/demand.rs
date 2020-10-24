@@ -50,11 +50,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub fn demand_suptype_diag(
         &self,
-        sp: Span,
+        sp_source: SpanSource,
         expected: Ty<'tcx>,
         actual: Ty<'tcx>,
     ) -> Option<DiagnosticBuilder<'tcx>> {
-        self.demand_suptype_with_origin(&self.misc(SpanSource::Span(sp)), expected, actual)
+        self.demand_suptype_with_origin(&self.misc(sp_source), expected, actual)
     }
 
     pub fn demand_suptype_with_origin(

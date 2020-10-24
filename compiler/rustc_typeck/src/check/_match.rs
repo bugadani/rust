@@ -173,7 +173,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if source_if {
                 let then_expr = &arms[0].body;
                 match (i, if_no_else) {
-                    (0, _) => coercion.coerce(self, &self.misc(SpanSource::Span(expr.span)), &arm.body, arm_ty),
+                    (0, _) => coercion.coerce(
+                        self,
+                        &self.misc(SpanSource::Span(expr.span)),
+                        &arm.body,
+                        arm_ty,
+                    ),
                     (_, true) => {} // Handled above to avoid duplicated type errors (#60254).
                     (_, _) => {
                         let then_ty = prior_arm_ty.unwrap();

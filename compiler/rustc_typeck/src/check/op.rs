@@ -34,7 +34,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let ty =
             if !lhs_ty.is_ty_var() && !rhs_ty.is_ty_var() && is_builtin_binop(lhs_ty, rhs_ty, op) {
-                self.enforce_builtin_binop_types(&lhs.span, lhs_ty, &rhs.span, rhs_ty, op);
+                self.enforce_builtin_binop_types(
+                    &SpanSource::Span(lhs.span),
+                    lhs_ty,
+                    &SpanSource::Span(rhs.span),
+                    rhs_ty,
+                    op,
+                );
                 self.tcx.mk_unit()
             } else {
                 return_ty
@@ -96,13 +102,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     && is_builtin_binop(lhs_ty, rhs_ty, op)
                 {
                     let builtin_return_ty = self.enforce_builtin_binop_types(
-                        &lhs_expr.span,
+                        &SpanSource::Span(lhs_expr.span),
                         lhs_ty,
-                        &rhs_expr.span,
+                        &SpanSource::Span(rhs_expr.span),
                         rhs_ty,
                         op,
                     );
-                    self.demand_suptype(expr.span, builtin_return_ty, return_ty);
+                    self.demand_suptype(SpanSource::Span(expr.span), builtin_return_ty, return_ty);
                 }
 
                 return_ty
@@ -112,9 +118,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     fn enforce_builtin_binop_types(
         &self,
-        lhs_span: &Span,
+        lhs_span: &SpanSource,
         lhs_ty: Ty<'tcx>,
-        rhs_span: &Span,
+        rhs_span: &SpanSource,
         rhs_ty: Ty<'tcx>,
         op: hir::BinOp,
     ) -> Ty<'tcx> {

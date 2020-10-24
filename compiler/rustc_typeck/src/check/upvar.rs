@@ -69,7 +69,7 @@ impl<'a, 'tcx> Visitor<'tcx> for InferBorrowKindVisitor<'a, 'tcx> {
         if let hir::ExprKind::Closure(cc, _, body_id, _, _) = expr.kind {
             let body = self.fcx.tcx.hir().body(body_id);
             self.visit_body(body);
-            self.fcx.analyze_closure(expr.hir_id, expr.span, body, cc);
+            self.fcx.analyze_closure(expr.hir_id, SpanSource::Span(expr.span), body, cc);
         }
 
         intravisit::walk_expr(self, expr);
@@ -81,7 +81,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn analyze_closure(
         &self,
         closure_hir_id: hir::HirId,
-        span: Span,
+        span_source: SpanSource,
         body: &hir::Body<'_>,
         capture_clause: hir::CaptureBy,
     ) {
@@ -98,7 +98,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
             _ => {
                 span_bug!(
-                    span,
+                    span_source.to_span(self.tcx),
                     "type of closure expr {:?} is not a closure {:?}",
                     closure_hir_id,
                     ty
@@ -128,7 +128,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let capture_kind = match capture_clause {
                     hir::CaptureBy::Value => ty::UpvarCapture::ByValue(None),
                     hir::CaptureBy::Ref => {
-                        let origin = UpvarRegion(upvar_id, SpanSource::Span(span));
+                        let origin = UpvarRegion(upvar_id, span_source);
                         let upvar_region = self.next_region_var(origin);
                         let upvar_borrow =
                             ty::UpvarBorrow { kind: ty::ImmBorrow, region: upvar_region };
@@ -172,7 +172,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // substs with the kind we inferred.
             let inferred_kind = delegate.current_closure_kind;
             let closure_kind_ty = closure_substs.as_closure().kind_ty();
-            self.demand_eqtype(SpanSource::Span(span), inferred_kind.to_ty(self.tcx), closure_kind_ty);
+            self.demand_eqtype(span_source, inferred_kind.to_ty(self.tcx), closure_kind_ty);
 
             // If we have an origin, store it.
             if let Some(origin) = delegate.current_origin {
@@ -207,7 +207,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Build a tuple (U0..Un) of the final upvar types U0..Un
         // and unify the upvar tupe type in the closure with it:
         let final_tupled_upvars_type = self.tcx.mk_tup(final_upvar_tys.iter());
-        self.demand_suptype(span, substs.tupled_upvars_ty(), final_tupled_upvars_type);
+        self.demand_suptype(span_source, substs.tupled_upvars_ty(), final_tupled_upvars_type);
 
         // If we are also inferred the closure kind here,
         // process any deferred resolutions.

@@ -89,13 +89,14 @@ pub(super) fn check_fn<'a, 'tcx>(
     );
 
     let span = body.value.span;
+    let span_source = SpanSource::Span(span);
 
     fn_maybe_err(tcx, span, fn_sig.abi);
 
     if body.generator_kind.is_some() && can_be_generator.is_some() {
         let yield_ty = fcx.next_ty_var(TypeVariableOrigin {
             kind: TypeVariableOriginKind::TypeInference,
-            span_source: SpanSource::Span(span),
+            span_source,
         });
         fcx.require_type_is_sized(yield_ty, span, traits::SizedYieldType);
 
@@ -114,8 +115,7 @@ pub(super) fn check_fn<'a, 'tcx>(
     let maybe_va_list = if fn_sig.c_variadic {
         let span = SpanSource::Span(body.params.last().unwrap().span);
         let va_list_did = tcx.require_lang_item(LangItem::VaList, Some(span));
-        let region =
-            fcx.next_region_var(RegionVariableOrigin::MiscVariable(span));
+        let region = fcx.next_region_var(RegionVariableOrigin::MiscVariable(span));
 
         Some(tcx.type_of(va_list_did).subst(tcx, &[region.into()]))
     } else {
@@ -127,7 +127,7 @@ pub(super) fn check_fn<'a, 'tcx>(
     let inputs_fn = fn_sig.inputs().iter().copied();
     for (idx, (param_ty, param)) in inputs_fn.chain(maybe_va_list).zip(body.params).enumerate() {
         // Check the pattern.
-        let ty_span = try { inputs_hir?.get(idx)?.span };
+        let ty_span = try { SpanSource::Span(inputs_hir?.get(idx)?.span) };
         fcx.check_pat_top(&param.pat, param_ty, ty_span, false);
 
         // Check that argument is Sized.
@@ -135,11 +135,7 @@ pub(super) fn check_fn<'a, 'tcx>(
         // for simple cases like `fn foo(x: Trait)`,
         // where we would error once on the parameter as a whole, and once on the binding `x`.
         if param.pat.simple_ident().is_none() && !tcx.features().unsized_locals {
-            fcx.require_type_is_sized(
-                param_ty,
-                param.pat.span,
-                traits::SizedArgumentType(ty_span),
-            );
+            fcx.require_type_is_sized(param_ty, param.pat.span, traits::SizedArgumentType(ty_span));
         }
 
         fcx.write_ty(param.hir_id, param_ty);
@@ -175,7 +171,7 @@ pub(super) fn check_fn<'a, 'tcx>(
     let gen_ty = if let (Some(_), Some(gen_kind)) = (can_be_generator, body.generator_kind) {
         let interior = fcx.next_ty_var(TypeVariableOrigin {
             kind: TypeVariableOriginKind::MiscVariable,
-            span_source: SpanSource::Span(span),
+            span_source,
         });
         fcx.deferred_generator_interiors.borrow_mut().push((body.id(), interior, gen_kind));
 
@@ -218,10 +214,10 @@ pub(super) fn check_fn<'a, 'tcx>(
     if actual_return_ty.is_never() {
         actual_return_ty = fcx.next_diverging_ty_var(TypeVariableOrigin {
             kind: TypeVariableOriginKind::DivergingFn,
-            span_source: SpanSource::Span(span),
+            span_source,
         });
     }
-    fcx.demand_suptype(span, revealed_ret_ty, actual_return_ty);
+    fcx.demand_suptype(span_source, revealed_ret_ty, actual_return_ty);
 
     // Check that the main return type implements the termination trait.
     if let Some(term_id) = tcx.lang_items().termination() {

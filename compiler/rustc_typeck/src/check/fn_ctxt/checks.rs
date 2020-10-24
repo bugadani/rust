@@ -36,7 +36,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub(in super::super) fn check_method_argument_types(
         &self,
-        sp: Span,
+        sp_source: SpanSource,
         expr: &'tcx hir::Expr<'tcx>,
         method: Result<MethodCallee<'tcx>, ()>,
         args_no_rcvr: &'tcx [hir::Expr<'tcx>],
@@ -56,7 +56,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             };
 
             self.check_argument_types(
-                sp,
+                sp_source,
                 expr,
                 &err_inputs[..],
                 &[],
@@ -71,13 +71,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let method = method.unwrap();
         // HACK(eddyb) ignore self in the definition (see above).
         let expected_arg_tys = self.expected_inputs_for_expected_output(
-            sp,
+            sp_source,
             expected,
             method.sig.output(),
             &method.sig.inputs()[1..],
         );
         self.check_argument_types(
-            sp,
+            sp_source,
             expr,
             &method.sig.inputs()[1..],
             &expected_arg_tys[..],
@@ -93,7 +93,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// method calls and overloaded operators.
     pub(in super::super) fn check_argument_types(
         &self,
-        sp: Span,
+        sp_source: SpanSource,
         expr: &'tcx hir::Expr<'tcx>,
         fn_inputs: &[Ty<'tcx>],
         expected_arg_tys: &[Ty<'tcx>],
@@ -138,14 +138,23 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         .unwrap_or(*span),
                     &args[1..], // Skip the receiver.
                 ),
-                k => span_bug!(sp, "checking argument types on a non-call: `{:?}`", k),
+                k => span_bug!(
+                    sp_source.to_span(tcx),
+                    "checking argument types on a non-call: `{:?}`",
+                    k
+                ),
             };
             let arg_spans = if args.is_empty() {
                 // foo()
                 // ^^^-- supplied 0 arguments
                 // |
                 // expected 2 arguments
-                vec![tcx.sess.source_map().next_point(start_span).with_hi(sp.hi())]
+                vec![
+                    tcx.sess
+                        .source_map()
+                        .next_point(start_span)
+                        .with_hi(sp_source.to_span(tcx).hi()),
+                ]
             } else {
                 // foo(1, 2, 3)
                 // ^^^ -  -  - supplied 3 arguments
@@ -219,7 +228,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let mut expected_arg_tys = expected_arg_tys.to_vec();
 
         let formal_tys = if tuple_arguments == TupleArguments {
-            let tuple_type = self.structurally_resolved_type(SpanSource::Span(sp), fn_inputs[0]);
+            let tuple_type = self.structurally_resolved_type(sp_source, fn_inputs[0]);
             match tuple_type.kind() {
                 ty::Tuple(arg_types) if arg_types.len() != args.len() => {
                     param_count_error(arg_types.len(), args.len(), "E0057", false, false);
@@ -239,7 +248,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 _ => {
                     struct_span_err!(
                         tcx.sess,
-                        sp,
+                        sp_source.to_span(tcx),
                         E0059,
                         "cannot use call notation; the first type parameter \
                          for the function trait is neither a tuple nor unit"
@@ -302,7 +311,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     self.point_at_arg_instead_of_call_if_possible(
                         errors,
                         &final_arg_types[..],
-                        sp,
+                        sp_source,
                         &args,
                     );
                 })
@@ -355,7 +364,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 // 3. Relate the expected type and the formal one,
                 //    if the expected type was used for the coercion.
-                self.demand_suptype(arg.span, formal_ty, coerce_ty);
+                self.demand_suptype(SpanSource::Span(arg.span), formal_ty, coerce_ty);
             }
         }
 
@@ -584,7 +593,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // if the block produces a `!` value, that can always be
         // (effectively) coerced to unit.
         if !ty.is_never() {
-            self.demand_suptype(blk.span, unit, ty);
+            self.demand_suptype(SpanSource::Span(blk.span), unit, ty);
         }
     }
 
@@ -645,7 +654,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if let Some(tail_expr_ty) = tail_expr_ty {
                 let tail_expr = tail_expr.unwrap();
                 let span = self.get_expr_coercion_span(tail_expr);
-                let cause = self.cause(SpanSource::Span(span), ObligationCauseCode::BlockTailExpression(blk.hir_id));
+                let cause = self.cause(
+                    SpanSource::Span(span),
+                    ObligationCauseCode::BlockTailExpression(blk.hir_id),
+                );
                 coerce.coerce(self, &cause, tail_expr, tail_expr_ty);
             } else {
                 // Subtle: if there is no explicit tail expression,
@@ -895,9 +907,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         &self,
         errors: &mut Vec<traits::FulfillmentError<'tcx>>,
         final_arg_types: &[(usize, Ty<'tcx>, Ty<'tcx>)],
-        call_sp: Span,
+        call_sp_source: SpanSource,
         args: &'tcx [hir::Expr<'tcx>],
     ) {
+        let call_sp = call_sp_source.to_span(self.tcx);
         // We *do not* do this for desugared call spans to keep good diagnostics when involving
         // the `?` operator.
         if call_sp.desugaring_kind().is_some() {

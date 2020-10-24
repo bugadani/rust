@@ -235,7 +235,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         );
         let method_names = self
             .probe_op(
-                span,
+                SpanSource::Span(span),
                 mode,
                 None,
                 Some(return_type),
@@ -250,7 +250,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             .iter()
             .flat_map(|&method_name| {
                 self.probe_op(
-                    span,
+                    SpanSource::Span(span),
                     mode,
                     Some(method_name),
                     Some(return_type),
@@ -268,7 +268,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub fn probe_for_name(
         &self,
-        span: Span,
+        span_source: SpanSource,
         mode: Mode,
         item_name: Ident,
         is_suggestion: IsSuggestion,
@@ -281,7 +281,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             self_ty, item_name, scope_expr_id
         );
         self.probe_op(
-            span,
+            span_source,
             mode,
             Some(item_name),
             None,
@@ -295,7 +295,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     fn probe_op<OP, R>(
         &'a self,
-        span: Span,
+        span_source: SpanSource,
         mode: Mode,
         method_name: Option<Ident>,
         return_type: Option<Ty<'tcx>>,
@@ -326,7 +326,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let infcx = &self.infcx;
                 let (ParamEnvAnd { param_env: _, value: self_ty }, canonical_inference_vars) =
                     infcx.instantiate_canonical_with_fresh_inference_vars(
-                        span,
+                        span_source.to_span(self.tcx), // FIXME
                         &param_env_and_self_ty,
                     );
                 debug!(
@@ -357,12 +357,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let ty = &steps
                     .steps
                     .last()
-                    .unwrap_or_else(|| span_bug!(span, "reached the recursion limit in 0 steps?"))
+                    .unwrap_or_else(|| {
+                        span_bug!(
+                            span_source.to_span(self.tcx),
+                            "reached the recursion limit in 0 steps?"
+                        )
+                    })
                     .self_ty;
                 let ty = self
-                    .probe_instantiate_query_response(SpanSource::Span(span), &orig_values, ty)
-                    .unwrap_or_else(|_| span_bug!(span, "instantiating {:?} failed?", ty));
-                autoderef::report_autoderef_recursion_limit_error(self.tcx, span, ty.value);
+                    .probe_instantiate_query_response(span_source, &orig_values, ty)
+                    .unwrap_or_else(|_| {
+                        span_bug!(span_source.to_span(self.tcx), "instantiating {:?} failed?", ty)
+                    });
+                autoderef::report_autoderef_recursion_limit_error(self.tcx, span_source, ty.value);
             });
         }
 
@@ -377,12 +384,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // so we do a future-compat lint here for the 2015 edition
                 // (see https://github.com/rust-lang/rust/issues/46906)
                 if self.tcx.sess.rust_2018() {
-                    self.tcx.sess.emit_err(MethodCallOnUnknownType { span });
+                    self.tcx.sess.emit_err(MethodCallOnUnknownType {
+                        span: span_source.to_span(self.tcx), // FIXME
+                    });
                 } else {
                     self.tcx.struct_span_lint_hir(
                         lint::builtin::TYVAR_BEHIND_RAW_POINTER,
                         scope_expr_id,
-                        span,
+                        span_source.to_span(self.tcx),
                         |lint| lint.build("type annotations needed").emit(),
                     );
                 }
@@ -392,9 +401,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // to it.
                 let ty = &bad_ty.ty;
                 let ty = self
-                    .probe_instantiate_query_response(SpanSource::Span(span), &orig_values, ty)
-                    .unwrap_or_else(|_| span_bug!(span, "instantiating {:?} failed?", ty));
-                let ty = self.structurally_resolved_type(SpanSource::Span(span), ty.value);
+                    .probe_instantiate_query_response(span_source, &orig_values, ty)
+                    .unwrap_or_else(|_| {
+                        span_bug!(span_source.to_span(self.tcx), "instantiating {:?} failed?", ty)
+                    });
+                let ty = self.structurally_resolved_type(span_source, ty.value);
                 assert!(matches!(ty.kind(), ty::Error(_)));
                 return Err(MethodError::NoMatch(NoMatchData::new(
                     Vec::new(),
@@ -413,7 +424,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         self.probe(|_| {
             let mut probe_cx = ProbeContext::new(
                 self,
-                span,
+                span_source.to_span(self.tcx), //FIXME I'm lazy
                 mode,
                 method_name,
                 return_type,

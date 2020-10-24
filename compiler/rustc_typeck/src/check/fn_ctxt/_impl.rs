@@ -812,7 +812,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// and forward type information on the input expressions.
     pub(in super::super) fn expected_inputs_for_expected_output(
         &self,
-        call_span: Span,
+        call_span_source: SpanSource,
         expected_ret: Expectation<'tcx>,
         formal_ret: Ty<'tcx>,
         formal_args: &[Ty<'tcx>],
@@ -828,7 +828,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // return type (likely containing type variables if the function
                 // is polymorphic) and the expected return type.
                 // No argument expectations are produced if unification fails.
-                let origin = self.misc(SpanSource::Span(call_span));
+                let origin = self.misc(call_span_source);
                 let ures = self.at(&origin, self.param_env).sup(ret_ty, &formal_ret);
 
                 // FIXME(#27336) can't use ? here, Try::from_error doesn't default
@@ -891,9 +891,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         &self,
         qpath: &'b QPath<'b>,
         hir_id: hir::HirId,
-        span: Span,
+        span_source: SpanSource,
     ) -> (Res, Option<Ty<'tcx>>, &'b [hir::PathSegment<'b>]) {
-        debug!("resolve_ty_and_res_ufcs: qpath={:?} hir_id={:?} span={:?}", qpath, hir_id, span);
+        debug!(
+            "resolve_ty_and_res_ufcs: qpath={:?} hir_id={:?} span={:?}",
+            qpath,
+            hir_id,
+            span_source.to_span(self.tcx)
+        );
         let (ty, qself, item_segment) = match *qpath {
             QPath::Resolved(ref opt_qself, ref path) => {
                 return (
@@ -914,14 +919,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             return (def, Some(ty), slice::from_ref(&**item_segment));
         }
         let item_name = item_segment.ident;
-        let result = self.resolve_ufcs(span, item_name, ty, hir_id).or_else(|error| {
+        let result = self.resolve_ufcs(span_source, item_name, ty, hir_id).or_else(|error| {
             let result = match error {
                 method::MethodError::PrivateMatch(kind, def_id, _) => Ok((kind, def_id)),
                 _ => Err(ErrorReported),
             };
             if item_name.name != kw::Invalid {
                 if let Some(mut e) = self.report_method_error(
-                    span,
+                    span_source,
                     ty,
                     item_name,
                     SelfSource::QPath(qself),
@@ -1350,7 +1355,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let ty = tcx.type_of(impl_def_id);
 
             let impl_ty = self.instantiate_type_scheme(span, &substs, &ty);
-            match self.at(&self.misc(SpanSource::Span(span)), self.param_env).sup(impl_ty, self_ty) {
+            match self.at(&self.misc(SpanSource::Span(span)), self.param_env).sup(impl_ty, self_ty)
+            {
                 Ok(ok) => self.register_infer_ok_obligations(ok),
                 Err(_) => {
                     self.tcx.sess.delay_span_bug(
@@ -1406,9 +1412,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ty
         } else {
             if !self.is_tainted_by_errors() {
-                self.emit_inference_failure_err((**self).body_id, sp_source.to_span(self.tcx), ty.into(), E0282)
-                    .note("type must be known at this point")
-                    .emit();
+                self.emit_inference_failure_err(
+                    (**self).body_id,
+                    sp_source.to_span(self.tcx),
+                    ty.into(),
+                    E0282,
+                )
+                .note("type must be known at this point")
+                .emit();
             }
             let err = self.tcx.ty_error();
             self.demand_suptype(sp_source, err, ty);
