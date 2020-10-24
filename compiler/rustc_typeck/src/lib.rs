@@ -158,7 +158,6 @@ fn require_same_types<'tcx>(
 
 fn check_main_fn_ty(tcx: TyCtxt<'_>, main_def_id: LocalDefId) {
     let main_id = tcx.hir().local_def_id_to_hir_id(main_def_id);
-    let main_span = tcx.def_span(main_def_id);
     let main_t = tcx.type_of(main_def_id);
     match main_t.kind() {
         ty::FnDef(..) => {
@@ -201,6 +200,7 @@ fn check_main_fn_ty(tcx: TyCtxt<'_>, main_def_id: LocalDefId) {
 
                     for attr in it.attrs {
                         if tcx.sess.check_name(attr, sym::track_caller) {
+                            let main_span = tcx.def_span(main_def_id);
                             tcx.sess
                                 .struct_span_err(
                                     attr.span,
@@ -242,7 +242,7 @@ fn check_main_fn_ty(tcx: TyCtxt<'_>, main_def_id: LocalDefId) {
             require_same_types(
                 tcx,
                 &ObligationCause::new(
-                    SpanSource::Span(main_span),
+                    SpanSource::DefId(main_def_id.to_def_id()),
                     main_id,
                     ObligationCauseCode::MainFunctionType,
                 ),
@@ -251,6 +251,7 @@ fn check_main_fn_ty(tcx: TyCtxt<'_>, main_def_id: LocalDefId) {
             );
         }
         _ => {
+            let main_span = tcx.def_span(main_def_id);
             span_bug!(main_span, "main has a non-function type: found `{}`", main_t);
         }
     }

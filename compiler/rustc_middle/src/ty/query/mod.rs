@@ -7,6 +7,7 @@ use crate::middle::codegen_fn_attrs::CodegenFnAttrs;
 use crate::middle::cstore::{CrateDepKind, CrateSource};
 use crate::middle::cstore::{ExternCrate, ForeignModule, LinkagePreference, NativeLib};
 use crate::middle::exported_symbols::{ExportedSymbol, SymbolExportLevel};
+use crate::middle::lang_items::SpanSource;
 use crate::middle::lib_features::LibFeatures;
 use crate::middle::privacy::AccessLevels;
 use crate::middle::region;

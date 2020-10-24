@@ -420,7 +420,7 @@ macro_rules! define_queries_inner {
         #[derive(Copy, Clone)]
         pub struct TyCtxtAt<'tcx> {
             pub tcx: TyCtxt<'tcx>,
-            pub span: Span,
+            pub span_source: SpanSource,
         }
 
         impl Deref for TyCtxtAt<'tcx> {
@@ -444,10 +444,10 @@ macro_rules! define_queries_inner {
             /// Returns a transparent wrapper for `TyCtxt` which uses
             /// `span` as the location of queries performed through it.
             #[inline(always)]
-            pub fn at(self, span: Span) -> TyCtxtAt<$tcx> {
+            pub fn at(self, span_source: SpanSource) -> TyCtxtAt<$tcx> {
                 TyCtxtAt {
                     tcx: self,
-                    span
+                    span_source
                 }
             }
 
@@ -496,7 +496,8 @@ macro_rules! define_queries_inner {
             pub fn $name(self, key: query_helper_param_ty!($($K)*))
                 -> <queries::$name<$tcx> as QueryConfig>::Stored
             {
-                get_query::<queries::$name<'_>, _>(self.tcx, self.span, key.into_query_param())
+                // FIXME pass SpanSource instead of Span
+                get_query::<queries::$name<'_>, _>(self.tcx, self.span(), key.into_query_param())
             })*
         }
 

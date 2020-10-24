@@ -1967,7 +1967,7 @@ impl ty::query::TyCtxtAt<'tcx> {
         self,
         param_env_and_ty: ty::ParamEnvAnd<'tcx, Ty<'tcx>>,
     ) -> Result<TyAndLayout<'tcx>, LayoutError<'tcx>> {
-        let cx = LayoutCx { tcx: self.at(self.span), param_env: param_env_and_ty.param_env };
+        let cx = LayoutCx { tcx: self.at(self.span_source), param_env: param_env_and_ty.param_env };
         cx.layout_of(param_env_and_ty.value)
     }
 }
