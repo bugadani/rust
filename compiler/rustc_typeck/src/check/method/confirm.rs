@@ -20,7 +20,7 @@ use std::ops::Deref;
 
 struct ConfirmContext<'a, 'tcx> {
     fcx: &'a FnCtxt<'a, 'tcx>,
-    span: Span,
+    span_source: SpanSource,
     self_expr: &'tcx hir::Expr<'tcx>,
     call_expr: &'tcx hir::Expr<'tcx>,
 }
@@ -40,7 +40,7 @@ pub struct ConfirmResult<'tcx> {
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub fn confirm_method(
         &self,
-        span: Span,
+        span_source: SpanSource,
         self_expr: &'tcx hir::Expr<'tcx>,
         call_expr: &'tcx hir::Expr<'tcx>,
         unadjusted_self_ty: Ty<'tcx>,
@@ -52,7 +52,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             unadjusted_self_ty, pick, segment.args,
         );
 
-        let mut confirm_cx = ConfirmContext::new(self, span, self_expr, call_expr);
+        let mut confirm_cx = ConfirmContext::new(self, span_source, self_expr, call_expr);
         confirm_cx.confirm(unadjusted_self_ty, pick, segment)
     }
 }
@@ -60,11 +60,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
     fn new(
         fcx: &'a FnCtxt<'a, 'tcx>,
-        span: Span,
+        span_source: SpanSource,
         self_expr: &'tcx hir::Expr<'tcx>,
         call_expr: &'tcx hir::Expr<'tcx>,
     ) -> ConfirmContext<'a, 'tcx> {
-        ConfirmContext { fcx, span, self_expr, call_expr }
+        ConfirmContext { fcx, span_source, self_expr, call_expr }
     }
 
     fn confirm(
@@ -91,16 +91,22 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         // traits, no trait system method can be called before this point because they
         // could alter our Self-type, except for normalizing the receiver from the
         // signature (which is also done during probing).
-        let method_sig_rcvr =
-            self.normalize_associated_types_in(self.span, &method_sig.inputs()[0]);
+
+        // FIXME: normalize_associated_types_in to take SpanSource?
+        let method_sig_rcvr = self.normalize_associated_types_in(
+            self.span_source.to_span(self.tcx),
+            &method_sig.inputs()[0],
+        );
         debug!(
             "confirm: self_ty={:?} method_sig_rcvr={:?} method_sig={:?} method_predicates={:?}",
             self_ty, method_sig_rcvr, method_sig, method_predicates
         );
         self.unify_receivers(self_ty, method_sig_rcvr, &pick, all_substs);
 
-        let (method_sig, method_predicates) =
-            self.normalize_associated_types_in(self.span, &(method_sig, method_predicates));
+        let (method_sig, method_predicates) = self.normalize_associated_types_in(
+            self.span_source.to_span(self.tcx),
+            &(method_sig, method_predicates),
+        );
 
         // Make sure nobody calls `drop()` explicitly.
         self.enforce_illegal_method_limitations(&pick);
@@ -139,7 +145,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         // Commit the autoderefs by calling `autoderef` again, but this
         // time writing the results into the various typeck results.
         let mut autoderef = self.autoderef_overloaded_span(
-            SpanSource::Span(self.span),
+            self.span_source,
             unadjusted_self_ty,
             SpanSource::Span(self.call_expr.span),
         );
@@ -156,14 +162,11 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
 
         let mut adjustments = self.adjust_steps(&autoderef);
 
-        let mut target = self.structurally_resolved_type(
-            SpanSource::Span(autoderef.span()),
-            autoderef.final_ty(false),
-        );
+        let mut target =
+            self.structurally_resolved_type(autoderef.span_source(), autoderef.final_ty(false));
 
         if let Some(mutbl) = pick.autoref {
-            let region =
-                self.next_region_var(infer::Autoref(SpanSource::Span(self.span), pick.item));
+            let region = self.next_region_var(infer::Autoref(self.span_source, pick.item));
             target = self.tcx.mk_ref(region, ty::TypeAndMut { mutbl, ty: target });
             let mutbl = match mutbl {
                 hir::Mutability::Not => AutoBorrowMutability::Not,
@@ -217,7 +220,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
                     "impl {:?} is not an inherent impl",
                     impl_def_id
                 );
-                self.fresh_substs_for_item(SpanSource::Span(self.span), impl_def_id)
+                self.fresh_substs_for_item(self.span_source, impl_def_id)
             }
 
             probe::ObjectPick => {
@@ -253,7 +256,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
                 // the process we will unify the transformed-self-type
                 // of the method with the actual type in order to
                 // unify some of these variables.
-                self.fresh_substs_for_item(SpanSource::Span(self.span), trait_def_id)
+                self.fresh_substs_for_item(self.span_source, trait_def_id)
             }
 
             probe::WhereClausePick(ref poly_trait_ref) => {
@@ -275,21 +278,24 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
 
         // FIXME: this feels, like, super dubious
         self.fcx
-            .autoderef(SpanSource::Span(self.span), self_ty)
+            .autoderef(self.span_source, self_ty)
             .include_raw_pointers()
             .find_map(|(ty, _)| match ty.kind() {
                 ty::Dynamic(ref data, ..) => Some(closure(
                     self,
                     ty,
                     data.principal().unwrap_or_else(|| {
-                        span_bug!(self.span, "calling trait method on empty object?")
+                        span_bug!(
+                            self.span_source.to_span(self.tcx),
+                            "calling trait method on empty object?"
+                        )
                     }),
                 )),
                 _ => None,
             })
             .unwrap_or_else(|| {
                 span_bug!(
-                    self.span,
+                    self.span_source.to_span(self.tcx),
                     "self-type `{}` for ObjectPick never dereferenced to an object",
                     self_ty
                 )
@@ -307,7 +313,11 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         // variables.
         let generics = self.tcx.generics_of(pick.item.def_id);
         let arg_count_correct = AstConv::check_generic_arg_count_for_call(
-            self.tcx, self.span, &generics, &seg, true, // `is_method_call`
+            self.tcx,
+            self.span_source,
+            &generics,
+            &seg,
+            true, // `is_method_call`
         );
 
         // Create subst for early-bound lifetime parameters, combining
@@ -343,7 +353,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
                 _ => unreachable!(),
             },
             // Provide substitutions for parameters for which arguments are inferred.
-            |_, param, _| self.var_for_def(SpanSource::Span(self.span), param),
+            |_, param, _| self.var_for_def(self.span_source, param),
         )
     }
 
@@ -356,10 +366,13 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
     ) {
         debug!(
             "unify_receivers: self_ty={:?} method_self_ty={:?} span={:?} pick={:?}",
-            self_ty, method_self_ty, self.span, pick
+            self_ty,
+            method_self_ty,
+            self.span_source.to_span(self.tcx),
+            pick
         );
         let cause = self.cause(
-            SpanSource::Span(self.span),
+            self.span_source,
             ObligationCauseCode::UnifyReceiver(Box::new(UnifyReceiverContext {
                 assoc_item: pick.item,
                 param_env: self.param_env,
@@ -372,7 +385,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
             }
             Err(_) => {
                 span_bug!(
-                    self.span,
+                    self.span_source.to_span(self.tcx),
                     "{} was a subtype of {} but now is not?",
                     self_ty,
                     method_self_ty
@@ -428,7 +441,11 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         );
 
         self.add_obligations_for_parameters(
-            traits::ObligationCause::misc(self.span, self.body_id),
+            traits::ObligationCause::new(
+                self.span_source,
+                self.body_id,
+                traits::ObligationCauseCode::MiscObligation,
+            ),
             method_predicates,
         );
 
@@ -439,7 +456,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         // the function type must also be well-formed (this is not
         // implied by the substs being well-formed because of inherent
         // impls and late-bound regions - see issue #28609).
-        self.register_wf_obligation(fty.into(), self.span, traits::MiscObligation);
+        self.register_wf_obligation(fty.into(), self.span_source, traits::MiscObligation);
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -483,7 +500,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         match pick.item.container {
             ty::TraitContainer(trait_def_id) => callee::check_legal_trait_for_method_call(
                 self.tcx,
-                self.span,
+                self.span_source,
                 Some(self.self_expr.span),
                 trait_def_id,
             ),
@@ -502,7 +519,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         // must be exactly one trait ref or we'd get an ambig error etc
         if upcast_trait_refs.len() != 1 {
             span_bug!(
-                self.span,
+                self.span_source.to_span(self.tcx),
                 "cannot uniquely upcast `{:?}` to `{:?}`: `{:?}`",
                 source_trait_ref,
                 target_trait_def_id,
@@ -517,8 +534,6 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
     where
         T: TypeFoldable<'tcx>,
     {
-        self.fcx
-            .replace_bound_vars_with_fresh_vars(SpanSource::Span(self.span), infer::FnCall, value)
-            .0
+        self.fcx.replace_bound_vars_with_fresh_vars(self.span_source, infer::FnCall, value).0
     }
 }

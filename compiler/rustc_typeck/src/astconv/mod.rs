@@ -313,7 +313,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
 
         let arg_count = Self::check_generic_arg_count(
             tcx,
-            span,
+            SpanSource::Span(span),
             &generic_params,
             &generic_args,
             GenericArgPosition::Type,

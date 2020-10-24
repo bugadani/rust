@@ -7,6 +7,7 @@ use rustc_errors::{pluralize, struct_span_err, Applicability, DiagnosticId, Erro
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{GenericArg, GenericArgs};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{
     self, subst, subst::SubstsRef, GenericParamDef, GenericParamDefKind, Ty, TyCtxt,
 };
@@ -318,7 +319,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
     /// Used specifically for function calls.
     pub fn check_generic_arg_count_for_call(
         tcx: TyCtxt<'_>,
-        span: Span,
+        span_source: SpanSource,
         def: &ty::Generics,
         seg: &hir::PathSegment<'_>,
         is_method_call: bool,
@@ -327,7 +328,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         let suppress_mismatch = Self::check_impl_trait(tcx, seg, &def);
         Self::check_generic_arg_count(
             tcx,
-            span,
+            span_source,
             def,
             if let Some(ref args) = seg.args { args } else { &empty_args },
             if is_method_call { GenericArgPosition::MethodCall } else { GenericArgPosition::Value },
@@ -340,7 +341,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
     /// This is used both for datatypes and function calls.
     pub(crate) fn check_generic_arg_count(
         tcx: TyCtxt<'_>,
-        span: Span,
+        span_source: SpanSource,
         def: &ty::Generics,
         args: &hir::GenericArgs<'_>,
         position: GenericArgPosition,
@@ -420,7 +421,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 (spans, format!("unexpected {} argument", kind))
             } else {
                 (
-                    vec![span],
+                    vec![span_source.to_span(tcx)],
                     format!(
                         "expected {}{} {} argument{}",
                         quantifier,

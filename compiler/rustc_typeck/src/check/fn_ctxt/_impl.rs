@@ -461,7 +461,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub fn to_ty(&self, ast_t: &hir::Ty<'_>) -> Ty<'tcx> {
         let t = AstConv::ast_ty_to_ty(self, ast_t);
-        self.register_wf_obligation(t.into(), ast_t.span, traits::MiscObligation);
+        self.register_wf_obligation(t.into(), SpanSource::Span(ast_t.span), traits::MiscObligation);
         t
     }
 
@@ -483,7 +483,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let c = ty::Const::from_anon_const(self.tcx, const_def_id);
         self.register_wf_obligation(
             c.into(),
-            self.tcx.hir().span(ast_c.hir_id),
+            SpanSource::Span(self.tcx.hir().span(ast_c.hir_id)), // FIXME construct from def id?
             ObligationCauseCode::MiscObligation,
         );
         c
@@ -501,7 +501,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let c = ty::Const::from_opt_const_arg_anon_const(self.tcx, const_def);
         self.register_wf_obligation(
             c.into(),
-            self.tcx.hir().span(ast_c.hir_id),
+            SpanSource::Span(self.tcx.hir().span(ast_c.hir_id)), // FIXME construct from def id
             ObligationCauseCode::MiscObligation,
         );
         c
@@ -540,11 +540,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub fn register_wf_obligation(
         &self,
         arg: subst::GenericArg<'tcx>,
-        span: Span,
+        span_source: SpanSource,
         code: traits::ObligationCauseCode<'tcx>,
     ) {
         // WF obligations never themselves fail, so no real need to give a detailed cause:
-        let cause = traits::ObligationCause::new(SpanSource::Span(span), self.body_id, code);
+        let cause = traits::ObligationCause::new(span_source, self.body_id, code);
         self.register_predicate(traits::Obligation::new(
             cause,
             self.param_env,
@@ -557,7 +557,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         for arg in substs.iter().filter(|arg| {
             matches!(arg.unpack(), GenericArgKind::Type(..) | GenericArgKind::Const(..))
         }) {
-            self.register_wf_obligation(arg, expr.span, traits::MiscObligation);
+            self.register_wf_obligation(arg, SpanSource::Span(expr.span), traits::MiscObligation);
         }
     }
 
@@ -1128,9 +1128,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let container = tcx.associated_item(def_id).container;
                 debug!("instantiate_value_path: def_id={:?} container={:?}", def_id, container);
                 match container {
-                    ty::TraitContainer(trait_did) => {
-                        callee::check_legal_trait_for_method_call(tcx, span, None, trait_did)
-                    }
+                    ty::TraitContainer(trait_did) => callee::check_legal_trait_for_method_call(
+                        tcx,
+                        SpanSource::Span(span),
+                        None,
+                        trait_did,
+                    ),
                     ty::ImplContainer(impl_def_id) => {
                         if segments.len() == 1 {
                             // `<T>::assoc` will end up here, and so
@@ -1195,7 +1198,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 correct: Err(GenericArgCountMismatch { reported: Some(ErrorReported), .. }),
                 ..
             } = AstConv::check_generic_arg_count_for_call(
-                tcx, span, &generics, &seg, false, // `is_method_call`
+                tcx,
+                SpanSource::Span(span),
+                &generics,
+                &seg,
+                false, // `is_method_call`
             ) {
                 infer_args_for_err.insert(index);
                 self.set_tainted_by_errors(); // See issue #53251.

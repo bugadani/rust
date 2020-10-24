@@ -24,11 +24,12 @@ use rustc_trait_selection::autoderef::Autoderef;
 /// method that is called).
 pub fn check_legal_trait_for_method_call(
     tcx: TyCtxt<'_>,
-    span: Span,
+    span_source: SpanSource,
     receiver: Option<Span>,
     trait_id: DefId,
 ) {
     if tcx.lang_items().drop_trait() == Some(trait_id) {
+        let span = span_source.to_span(tcx);
         let mut err = struct_span_err!(tcx.sess, span, E0040, "explicit use of destructor method");
         err.span_label(span, "explicit destructor calls not allowed");
 
@@ -96,7 +97,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         };
 
         // we must check that return type of called functions is WF:
-        self.register_wf_obligation(output.into(), call_expr.span, traits::MiscObligation);
+        self.register_wf_obligation(
+            output.into(),
+            SpanSource::Span(call_expr.span),
+            traits::MiscObligation,
+        );
 
         output
     }

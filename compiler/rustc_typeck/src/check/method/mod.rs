@@ -206,21 +206,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 .insert(*import_id);
         }
 
-        //FIXME
+        //FIXME span source
         self.tcx.check_stability(
             pick.item.def_id,
             Some(call_expr.hir_id),
             span_source.to_span(self.tcx),
         );
 
-        let result = self.confirm_method(
-            span_source.to_span(self.tcx),
-            self_expr,
-            call_expr,
-            self_ty,
-            pick.clone(),
-            segment,
-        );
+        let result =
+            self.confirm_method(span_source, self_expr, call_expr, self_ty, pick.clone(), segment);
 
         if let Some(span) = result.illegal_sized_bound {
             let mut needs_mut = false;
