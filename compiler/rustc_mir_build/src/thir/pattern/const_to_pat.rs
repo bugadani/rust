@@ -473,7 +473,7 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
             ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::FnDef(..) => {
                 PatKind::Constant { value: cv }
             }
-            ty::RawPtr(pointee) if pointee.ty.is_sized(tcx.at(span), param_env) => {
+            ty::RawPtr(pointee) if pointee.ty.is_sized(tcx.at(SpanSource::Span(span)), param_env) => {
                 PatKind::Constant { value: cv }
             }
             // FIXME: these can have very suprising behaviour where optimization levels or other

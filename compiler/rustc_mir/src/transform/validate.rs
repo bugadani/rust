@@ -5,6 +5,7 @@ use crate::dataflow::{Analysis, ResultsCursor};
 use crate::util::storage::AlwaysLiveLocals;
 
 use super::MirPass;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::{PlaceContext, Visitor};
 use rustc_middle::mir::{
     AggregateKind, BasicBlock, Body, BorrowKind, Local, Location, MirPhase, Operand, Rvalue,
@@ -241,7 +242,7 @@ impl<'a, 'tcx> Visitor<'tcx> for TypeChecker<'a, 'tcx> {
             let ty = place.ty(&self.body.local_decls, self.tcx).ty;
             let span = self.body.source_info(location).span;
 
-            if !ty.is_copy_modulo_regions(self.tcx.at(span), self.param_env) {
+            if !ty.is_copy_modulo_regions(self.tcx.at(SpanSource::Span(span)), self.param_env) {
                 self.fail(location, format!("`Operand::Copy` with non-`Copy` type {}", ty));
             }
         }

@@ -2587,7 +2587,7 @@ impl<'tcx> TyCtxt<'tcx> {
 }
 
 impl TyCtxtAt<'tcx> {
-    /// 
+    ///
     #[track_caller]
     pub fn span(self) -> Span {
         self.span_source.to_span(self.tcx)
@@ -2596,7 +2596,8 @@ impl TyCtxtAt<'tcx> {
     /// Constructs a `TyKind::Error` type and registers a `delay_span_bug` to ensure it gets used.
     #[track_caller]
     pub fn ty_error(self) -> Ty<'tcx> {
-        self.tcx.ty_error_with_message(self.span(), "TyKind::Error constructed but no error reported")
+        self.tcx
+            .ty_error_with_message(self.span(), "TyKind::Error constructed but no error reported")
     }
 
     /// Constructs a `TyKind::Error` type and registers a `delay_span_bug` with the given `msg to

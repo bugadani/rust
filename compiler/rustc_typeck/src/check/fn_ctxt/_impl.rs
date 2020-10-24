@@ -1230,8 +1230,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             .unwrap_or(false);
 
         let (res, self_ctor_substs) = if let Res::SelfCtor(impl_def_id) = res {
-            let span = span_source.to_span(tcx);
-            let ty = self.normalize_ty(span_source, tcx.at(span).type_of(impl_def_id));
+            let ty = self.normalize_ty(span_source, tcx.at(span_source).type_of(impl_def_id));
             match *ty.kind() {
                 ty::Adt(adt_def, substs) if adt_def.has_ctor() => {
                     let variant = adt_def.non_enum_variant();
@@ -1242,6 +1241,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     )
                 }
                 _ => {
+                    let span = span_source.to_span(tcx);
                     let mut err = tcx.sess.struct_span_err(
                         span,
                         "the `Self` constructor can only be used with tuple or unit structs",

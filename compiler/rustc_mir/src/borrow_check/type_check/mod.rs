@@ -984,10 +984,9 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
         );
         for user_annotation in self.user_type_annotations {
             let CanonicalUserTypeAnnotation { span, ref user_ty, inferred_ty } = *user_annotation;
-            let (annotation, _) = self.infcx.instantiate_canonical_with_fresh_inference_vars(
-                SpanSource::Span(span),
-                user_ty,
-            );
+            let (annotation, _) = self
+                .infcx
+                .instantiate_canonical_with_fresh_inference_vars(SpanSource::Span(span), user_ty);
             match annotation {
                 UserType::Ty(mut ty) => {
                     ty = self.normalize(ty, Locations::All(span));
@@ -1903,7 +1902,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
         // `Sized` bound in no way depends on precise regions, so this
         // shouldn't affect `is_sized`.
         let erased_ty = tcx.erase_regions(&ty);
-        if !erased_ty.is_sized(tcx.at(span), self.param_env) {
+        if !erased_ty.is_sized(tcx.at(SpanSource::Span(span)), self.param_env) {
             // in current MIR construction, all non-control-flow rvalue
             // expressions evaluate through `as_temp` or `into` a return
             // slot or local, so to find all unsized rvalues it is enough

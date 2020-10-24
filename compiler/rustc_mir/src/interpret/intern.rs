@@ -65,7 +65,7 @@ struct IsStaticOrFn;
 
 fn mutable_memory_in_const(tcx: TyCtxtAt<'_>, kind: &str) {
     // FIXME: show this in validation instead so we can point at where in the value the error is?
-    tcx.sess.span_err(tcx.span, &format!("mutable memory ({}) is not allowed in constant", kind));
+    tcx.sess.span_err(tcx.span(), &format!("mutable memory ({}) is not allowed in constant", kind));
 }
 
 /// Intern an allocation without looking at its children.
@@ -94,7 +94,7 @@ fn intern_shallow<'rt, 'mir, 'tcx, M: CompileTimeMachine<'mir, 'tcx>>(
             // in the value the dangling reference lies.
             // The `delay_span_bug` ensures that we don't forget such a check in validation.
             if tcx.get_global_alloc(alloc_id).is_none() {
-                tcx.sess.delay_span_bug(ecx.tcx.span, "tried to intern dangling pointer");
+                tcx.sess.delay_span_bug(ecx.tcx.span(), "tried to intern dangling pointer");
             }
             // treat dangling pointers like other statics
             // just to stop trying to recurse into them
@@ -218,7 +218,7 @@ impl<'rt, 'mir, 'tcx: 'mir, M: CompileTimeMachine<'mir, 'tcx>> ValueVisitor<'mir
                 } else {
                     // Let validation show the error message, but make sure it *does* error.
                     tcx.sess
-                        .delay_span_bug(tcx.span, "vtables pointers cannot be integer pointers");
+                        .delay_span_bug(tcx.span(), "vtables pointers cannot be integer pointers");
                 }
             }
             // Check if we have encountered this pointer+layout combination before.
@@ -362,7 +362,7 @@ pub fn intern_const_alloc_recursive<M: CompileTimeMachine<'mir, 'tcx>>(
             Ok(()) => {}
             Err(error) => {
                 ecx.tcx.sess.delay_span_bug(
-                    ecx.tcx.span,
+                    ecx.tcx.span(),
                     &format!(
                         "error during interning should later cause validation failure: {}",
                         error
@@ -414,7 +414,7 @@ pub fn intern_const_alloc_recursive<M: CompileTimeMachine<'mir, 'tcx>>(
                     // such as `const CONST_RAW: *const Vec<i32> = &Vec::new() as *const _;`.
                     ecx.tcx
                         .sess
-                        .span_err(ecx.tcx.span, "untyped pointers are not allowed in constant");
+                        .span_err(ecx.tcx.span(), "untyped pointers are not allowed in constant");
                     // For better errors later, mark the allocation as immutable.
                     alloc.mutability = Mutability::Not;
                 }
@@ -429,11 +429,11 @@ pub fn intern_const_alloc_recursive<M: CompileTimeMachine<'mir, 'tcx>>(
         } else if ecx.memory.dead_alloc_map.contains_key(&alloc_id) {
             // Codegen does not like dangling pointers, and generally `tcx` assumes that
             // all allocations referenced anywhere actually exist. So, make sure we error here.
-            ecx.tcx.sess.span_err(ecx.tcx.span, "encountered dangling pointer in final constant");
+            ecx.tcx.sess.span_err(ecx.tcx.span(), "encountered dangling pointer in final constant");
         } else if ecx.tcx.get_global_alloc(alloc_id).is_none() {
             // We have hit an `AllocId` that is neither in local or global memory and isn't
             // marked as dangling by local memory.  That should be impossible.
-            span_bug!(ecx.tcx.span, "encountered unknown alloc id {:?}", alloc_id);
+            span_bug!(ecx.tcx.span(), "encountered unknown alloc id {:?}", alloc_id);
         }
     }
 }

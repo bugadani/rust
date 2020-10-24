@@ -1,9 +1,10 @@
 use rustc_errors::ErrorReported;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_infer::infer::TyCtxtInferExt;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::SubstsRef;
 use rustc_middle::ty::{self, Instance, TyCtxt, TypeFoldable};
-use rustc_span::{sym, DUMMY_SP};
+use rustc_span::sym;
 use rustc_target::spec::abi::Abi;
 use rustc_trait_selection::traits;
 use traits::{translate_substs, Reveal};
@@ -249,7 +250,7 @@ fn resolve_associated_item<'tcx>(
                 if name == sym::clone {
                     let self_ty = trait_ref.self_ty();
 
-                    let is_copy = self_ty.is_copy_modulo_regions(tcx.at(DUMMY_SP), param_env);
+                    let is_copy = self_ty.is_copy_modulo_regions(tcx.at(SpanSource::DUMMY), param_env);
                     match self_ty.kind() {
                         _ if is_copy => (),
                         ty::Array(..) | ty::Closure(..) | ty::Tuple(..) => {}

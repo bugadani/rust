@@ -382,7 +382,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             local_visitor.visit_expr(expr);
         }
         let err_span = if let Some(pattern) = local_visitor.found_arg_pattern {
-            pattern.span
+            SpanSource::Span(pattern.span)
         } else if let Some(span) = arg_data.span_source {
             // `span` here lets us point at `sum` instead of the entire right hand side expr:
             // error[E0282]: type annotations needed
@@ -390,7 +390,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             //   |
             // 3 |     let _ = x.sum() as f64;
             //   |               ^^^ cannot infer type for `S`
-            span.to_span(self.tcx)
+            span
         } else if let Some(ExprKind::MethodCall(_, call_span, _, _)) =
             local_visitor.found_method_call.map(|e| &e.kind)
         {
@@ -402,9 +402,9 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             //   |                             ^^^^^^^ cannot infer type
             //   |
             //   = note: cannot resolve `<_ as std::ops::Try>::Ok == _`
-            if span.contains(*call_span) { *call_span } else { span }
+            SpanSource::Span(if span.contains(*call_span) { *call_span } else { span })
         } else {
-            span
+            SpanSource::Span(span)
         };
 
         let is_named_and_not_impl_trait = |ty: Ty<'_>| {
@@ -445,7 +445,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         // ```
         let error_code = error_code.into();
         let mut err = self.tcx.sess.struct_span_err_with_code(
-            err_span,
+            err_span.to_span(self.tcx),
             &format!("type annotations needed{}", ty_msg),
             error_code,
         );
@@ -612,7 +612,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         //   |               ^^^ cannot infer type for `S`
         //   |
         //   = note: type must be known at this point
-        let span = arg_data.span_source.unwrap_or(SpanSource::Span(err_span));
+        let span = arg_data.span_source.unwrap_or(err_span_source);
         if !err.span.span_labels().iter().any(|span_label| {
             span_label.label.is_some() && SpanSource::Span(span_label.span) == span
         }) && local_visitor.found_arg_pattern.is_none()

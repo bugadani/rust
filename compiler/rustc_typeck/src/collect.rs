@@ -314,9 +314,7 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
         span_source: SpanSource,
         def_id: DefId,
     ) -> ty::GenericPredicates<'tcx> {
-        self.tcx
-            .at(span_source.to_span(self.tcx))
-            .type_param_predicates((self.item_def_id, def_id.expect_local()))
+        self.tcx.at(span_source).type_param_predicates((self.item_def_id, def_id.expect_local()))
     }
 
     fn re_infer(&self, _: Option<&ty::GenericParamDef>, _: SpanSource) -> Option<ty::Region<'tcx>> {
@@ -677,12 +675,12 @@ fn convert_item(tcx: TyCtxt<'_>, item_id: hir::HirId) {
         hir::ItemKind::Trait(..) => {
             tcx.ensure().generics_of(def_id);
             tcx.ensure().trait_def(def_id);
-            tcx.at(it.span).super_predicates_of(def_id);
+            tcx.at(SpanSource::Span(it.span)).super_predicates_of(def_id);
             tcx.ensure().predicates_of(def_id);
         }
         hir::ItemKind::TraitAlias(..) => {
             tcx.ensure().generics_of(def_id);
-            tcx.at(it.span).super_predicates_of(def_id);
+            tcx.at(SpanSource::Span(it.span)).super_predicates_of(def_id);
             tcx.ensure().predicates_of(def_id);
         }
         hir::ItemKind::Struct(ref struct_def, _) | hir::ItemKind::Union(ref struct_def, _) => {
@@ -1032,7 +1030,7 @@ fn super_predicates_of(tcx: TyCtxt<'_>, trait_def_id: DefId) -> ty::GenericPredi
     for &(pred, span) in superbounds {
         debug!("superbound: {:?}", pred);
         if let ty::PredicateAtom::Trait(bound, _) = pred.skip_binders() {
-            tcx.at(span).super_predicates_of(bound.def_id());
+            tcx.at(SpanSource::Span(span)).super_predicates_of(bound.def_id());
         }
     }
 

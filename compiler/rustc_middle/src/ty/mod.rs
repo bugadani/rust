@@ -8,6 +8,7 @@ pub use self::Variance::*;
 use crate::hir::exports::ExportMap;
 use crate::ich::StableHashingContext;
 use crate::middle::cstore::CrateStoreDyn;
+use crate::middle::lang_items::SpanSource;
 use crate::middle::resolve_lifetime::ObjectLifetimeDefault;
 use crate::mir::interpret::ErrorHandled;
 use crate::mir::Body;
@@ -2514,7 +2515,7 @@ impl<'tcx> AdtDef {
                 } else {
                     info!("invalid enum discriminant: {:#?}", val);
                     crate::mir::interpret::struct_error(
-                        tcx.at(tcx.def_span(expr_did)),
+                        tcx.at(SpanSource::DefId(expr_did)),
                         "constant evaluation of enum discriminant resulted in non-integer",
                     )
                     .emit();

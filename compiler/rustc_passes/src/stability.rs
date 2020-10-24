@@ -11,6 +11,7 @@ use rustc_hir::def_id::{DefId, LocalDefId, CRATE_DEF_INDEX, LOCAL_CRATE};
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{Generics, HirId, Item, StructField, TraitRef, Ty, TyKind, Variant};
 use rustc_middle::hir::map::Map;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::privacy::AccessLevels;
 use rustc_middle::middle::stability::{DeprecationEntry, Index};
 use rustc_middle::ty::{self, query::Providers, TyCtxt};
@@ -19,7 +20,7 @@ use rustc_session::lint::builtin::INEFFECTIVE_UNSTABLE_TRAIT_IMPL;
 use rustc_session::parse::feature_err;
 use rustc_session::Session;
 use rustc_span::symbol::{sym, Symbol};
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::Span;
 
 use std::cmp::Ordering;
 use std::mem::replace;
@@ -720,7 +721,7 @@ impl Visitor<'tcx> for Checker<'tcx> {
                 for field in &adt_def.non_enum_variant().fields {
                     let field_ty = field.ty(self.tcx, substs);
                     if !field_ty.ty_adt_def().map_or(false, |adt_def| adt_def.is_manually_drop())
-                        && !field_ty.is_copy_modulo_regions(self.tcx.at(DUMMY_SP), param_env)
+                        && !field_ty.is_copy_modulo_regions(self.tcx.at(SpanSource::DUMMY), param_env)
                     {
                         if field_ty.needs_drop(self.tcx, param_env) {
                             // Avoid duplicate error: This will error later anyway because fields

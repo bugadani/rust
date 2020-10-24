@@ -9,6 +9,7 @@ use rustc_hir::def::DefKind;
 use rustc_hir::HirId;
 use rustc_index::bit_set::BitSet;
 use rustc_index::vec::IndexVec;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::interpret::{InterpResult, Scalar};
 use rustc_middle::mir::visit::{
     MutVisitor, MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor,
@@ -465,7 +466,7 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
         match self.ecx.const_to_op(c.literal, None) {
             Ok(op) => Some(op),
             Err(error) => {
-                let tcx = self.ecx.tcx.at(c.span);
+                let tcx = self.ecx.tcx.at(SpanSource::Span(c.span));
                 let err = ConstEvalErr::new(&self.ecx, error, Some(c.span));
                 if let Some(lint_root) = self.lint_root(source_info) {
                     let lint_only = match c.literal.val {

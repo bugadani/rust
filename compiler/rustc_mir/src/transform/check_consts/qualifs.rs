@@ -2,9 +2,9 @@
 //!
 //! See the `Qualif` trait for more info.
 
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, subst::SubstsRef, AdtDef, Ty};
-use rustc_span::DUMMY_SP;
 use rustc_trait_selection::traits;
 
 use super::ConstCx;
@@ -77,7 +77,7 @@ impl Qualif for HasMutInterior {
     }
 
     fn in_any_value_of_ty(cx: &ConstCx<'_, 'tcx>, ty: Ty<'tcx>) -> bool {
-        !ty.is_freeze(cx.tcx.at(DUMMY_SP), cx.param_env)
+        !ty.is_freeze(cx.tcx.at(SpanSource::DUMMY), cx.param_env)
     }
 
     fn in_adt_inherently(cx: &ConstCx<'_, 'tcx>, adt: &'tcx AdtDef, _: SubstsRef<'tcx>) -> bool {
@@ -249,9 +249,11 @@ where
         // Don't peek inside trait associated constants.
         if cx.tcx.trait_of_item(def.did).is_none() {
             let qualifs = if let Some((did, param_did)) = def.as_const_arg() {
-                cx.tcx.at(constant.span).mir_const_qualif_const_arg((did, param_did))
+                cx.tcx
+                    .at(SpanSource::Span(constant.span))
+                    .mir_const_qualif_const_arg((did, param_did))
             } else {
-                cx.tcx.at(constant.span).mir_const_qualif(def.did)
+                cx.tcx.at(SpanSource::Span(constant.span)).mir_const_qualif(def.did)
             };
 
             if !Q::in_qualifs(&qualifs) {

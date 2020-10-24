@@ -117,8 +117,7 @@ fn visit_implementation_of_coerce_unsized(tcx: TyCtxt<'tcx>, impl_did: LocalDefI
     // Just compute this for the side-effects, in particular reporting
     // errors; other parts of the code may demand it for the info of
     // course.
-    let span = tcx.def_span(impl_did);
-    tcx.at(span).coerce_unsized_info(impl_did);
+    tcx.at(SpanSource::DefId(impl_did.to_def_id())).coerce_unsized_info(impl_did);
 }
 
 fn visit_implementation_of_dispatch_from_dyn(tcx: TyCtxt<'_>, impl_did: LocalDefId) {

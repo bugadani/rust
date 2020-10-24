@@ -1,5 +1,6 @@
 use super::{ErrorHandled, EvalToConstValueResult, GlobalId};
 
+use crate::middle::lang_items::SpanSource;
 use crate::mir;
 use crate::ty::subst::{InternalSubsts, SubstsRef};
 use crate::ty::{self, TyCtxt};
@@ -69,7 +70,7 @@ impl<'tcx> TyCtxt<'tcx> {
         // improve caching of queries.
         let inputs = self.erase_regions(&param_env.and(cid));
         if let Some(span) = span {
-            self.at(span).eval_to_const_value_raw(inputs)
+            self.at(SpanSource::Span(span)).eval_to_const_value_raw(inputs)
         } else {
             self.eval_to_const_value_raw(inputs)
         }

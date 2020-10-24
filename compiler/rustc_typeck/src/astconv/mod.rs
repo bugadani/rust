@@ -332,7 +332,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         let default_needs_object_self = |param: &ty::GenericParamDef| {
             if let GenericParamDefKind::Type { has_default, .. } = param.kind {
                 if is_object && has_default {
-                    let default_ty = tcx.at(span_source.to_span(tcx)).type_of(param.def_id);
+                    let default_ty = tcx.at(span_source).type_of(param.def_id);
                     let self_param = tcx.types.self_param;
                     if default_ty.walk().any(|arg| arg == self_param.into()) {
                         // There is no suitable inference default for a type parameter
@@ -422,7 +422,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                                 // This is a default type parameter.
                                 self.normalize_ty(
                                     span_source,
-                                    tcx.at(span_source.to_span(tcx))
+                                    tcx.at(span_source)
                                         .type_of(param.def_id)
                                         .subst_spanned(
                                             tcx,
@@ -443,7 +443,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                         }
                     }
                     GenericParamDefKind::Const => {
-                        let ty = tcx.at(span_source.to_span(tcx)).type_of(param.def_id);
+                        let ty = tcx.at(span_source).type_of(param.def_id);
                         // FIXME(const_generics:defaults)
                         if infer_args {
                             // No const parameters were provided, we can infer all.
@@ -1014,7 +1014,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         let substs = self.ast_path_substs_for_ty(span_source, did, item_segment);
         self.normalize_ty(
             span_source,
-            self.tcx().at(span_source.to_span(self.tcx())).type_of(did).subst(self.tcx(), substs),
+            self.tcx().at(span_source).type_of(did).subst(self.tcx(), substs),
         )
     }
 
@@ -1981,7 +1981,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 self.prohibit_generics(path.segments);
                 // Try to evaluate any array length constants.
                 let normalized_ty =
-                    self.normalize_ty(SpanSource::Span(span), tcx.at(span).type_of(def_id));
+                    self.normalize_ty(SpanSource::Span(span), tcx.at(SpanSource::Span(span)).type_of(def_id));
                 if forbid_generic && normalized_ty.needs_subst() {
                     let mut err = tcx.sess.struct_span_err(
                         path.span,
@@ -2120,7 +2120,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 );
                 self.normalize_ty(
                     SpanSource::Span(span),
-                    tcx.at(span).type_of(def_id).subst(tcx, substs),
+                    tcx.at(SpanSource::Span(span)).type_of(def_id).subst(tcx, substs),
                 )
             }
             hir::TyKind::Array(ref ty, ref length) => {

@@ -6,6 +6,7 @@ use crate::thir::*;
 use rustc_hir as hir;
 use rustc_hir::def::{CtorKind, CtorOf, DefKind, Res};
 use rustc_index::vec::Idx;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::interpret::Scalar;
 use rustc_middle::mir::BorrowKind;
 use rustc_middle::ty::adjustment::{
@@ -252,7 +253,7 @@ fn make_mirror_unadjusted<'a, 'tcx>(
         }
 
         hir::ExprKind::Lit(ref lit) => ExprKind::Literal {
-            literal: cx.const_eval_literal(&lit.node, expr_ty, lit.span, false),
+            literal: cx.const_eval_literal(&lit.node, expr_ty, SpanSource::Span(lit.span), false),
             user_ty: None,
             const_id: None,
         },
@@ -319,7 +320,7 @@ fn make_mirror_unadjusted<'a, 'tcx>(
             } else {
                 if let hir::ExprKind::Lit(ref lit) = arg.kind {
                     ExprKind::Literal {
-                        literal: cx.const_eval_literal(&lit.node, expr_ty, lit.span, true),
+                        literal: cx.const_eval_literal(&lit.node, expr_ty, SpanSource::Span(lit.span), true),
                         user_ty: None,
                         const_id: None,
                     }

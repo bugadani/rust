@@ -5,11 +5,12 @@ use rustc_hir::def::{DefKind, Res};
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_index::vec::Idx;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::layout::{LayoutError, SizeSkeleton};
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_session::lint;
-use rustc_span::{sym, Span, Symbol, DUMMY_SP};
+use rustc_span::{sym, Span, Symbol};
 use rustc_target::abi::{Pointer, VariantIdx};
 use rustc_target::asm::{InlineAsmRegOrRegClass, InlineAsmType};
 use rustc_target::spec::abi::Abi::RustIntrinsic;
@@ -124,7 +125,7 @@ impl ExprVisitor<'tcx> {
     }
 
     fn is_thin_ptr_ty(&self, ty: Ty<'tcx>) -> bool {
-        if ty.is_sized(self.tcx.at(DUMMY_SP), self.param_env) {
+        if ty.is_sized(self.tcx.at(SpanSource::DUMMY), self.param_env) {
             return true;
         }
         if let ty::Foreign(..) = ty.kind() {
@@ -214,7 +215,7 @@ impl ExprVisitor<'tcx> {
 
         // Check that the type implements Copy. The only case where this can
         // possibly fail is for SIMD types which don't #[derive(Copy)].
-        if !ty.is_copy_modulo_regions(self.tcx.at(DUMMY_SP), self.param_env) {
+        if !ty.is_copy_modulo_regions(self.tcx.at(SpanSource::DUMMY), self.param_env) {
             let msg = "arguments for inline assembly must be copyable";
             let mut err = self.tcx.sess.struct_span_err(expr.span, msg);
             err.note(&format!("`{}` does not implement the Copy trait", ty));

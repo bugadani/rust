@@ -145,7 +145,10 @@ impl<'tcx> ObligationCause<'tcx> {
         ObligationCause::misc_with_span_source(SpanSource::DefId(def_id), body_id)
     }
 
-    pub fn misc_with_span_source(span_source: SpanSource, body_id: hir::HirId) -> ObligationCause<'tcx> {
+    pub fn misc_with_span_source(
+        span_source: SpanSource,
+        body_id: hir::HirId,
+    ) -> ObligationCause<'tcx> {
         ObligationCause::new(span_source, body_id, MiscObligation)
     }
 

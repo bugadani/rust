@@ -15,6 +15,7 @@
 use rustc_ast::LitKind;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::traversal::ReversePostorder;
 use rustc_middle::mir::visit::{MutVisitor, MutatingUseContext, PlaceContext, Visitor};
 use rustc_middle::mir::*;
@@ -22,7 +23,7 @@ use rustc_middle::ty::cast::CastTy;
 use rustc_middle::ty::subst::InternalSubsts;
 use rustc_middle::ty::{self, List, TyCtxt, TypeFoldable};
 use rustc_span::symbol::sym;
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::Span;
 
 use rustc_index::vec::{Idx, IndexVec};
 use rustc_target::spec::abi::Abi;
@@ -356,7 +357,7 @@ impl<'tcx> Validator<'_, 'tcx> {
                                     Place::ty_from(place.local, proj_base, self.body, self.tcx)
                                         .projection_ty(self.tcx, elem)
                                         .ty;
-                                if ty.is_freeze(self.tcx.at(DUMMY_SP), self.param_env) {
+                                if ty.is_freeze(self.tcx.at(SpanSource::DUMMY), self.param_env) {
                                     has_mut_interior = false;
                                     break;
                                 }
@@ -719,7 +720,7 @@ impl<'tcx> Validator<'_, 'tcx> {
                         let ty = Place::ty_from(place.local, proj_base, self.body, self.tcx)
                             .projection_ty(self.tcx, elem)
                             .ty;
-                        if ty.is_freeze(self.tcx.at(DUMMY_SP), self.param_env) {
+                        if ty.is_freeze(self.tcx.at(SpanSource::DUMMY), self.param_env) {
                             has_mut_interior = false;
                             break;
                         }

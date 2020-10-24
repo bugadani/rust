@@ -5,6 +5,7 @@ use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::hir_id::HirId;
 use rustc_hir::intravisit;
 use rustc_hir::Node;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::{MutatingUseContext, PlaceContext, Visitor};
 use rustc_middle::mir::*;
 use rustc_middle::ty::cast::CastTy;
@@ -250,7 +251,7 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
                                 ),
                             };
                             if !elem_ty.is_copy_modulo_regions(
-                                self.tcx.at(self.source_info.span),
+                                self.tcx.at(SpanSource::Span(self.source_info.span)),
                                 self.param_env,
                             ) {
                                 self.require_unsafe(
@@ -406,11 +407,10 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
 
                             // Check `is_freeze` as late as possible to avoid cycle errors
                             // with opaque types.
-                            } else if !place
-                                .ty(self.body, self.tcx)
-                                .ty
-                                .is_freeze(self.tcx.at(self.source_info.span), self.param_env)
-                            {
+                            } else if !place.ty(self.body, self.tcx).ty.is_freeze(
+                                self.tcx.at(SpanSource::Span(self.source_info.span)),
+                                self.param_env,
+                            ) {
                                 UnsafetyViolationDetails::BorrowOfLayoutConstrainedField
                             } else {
                                 continue;

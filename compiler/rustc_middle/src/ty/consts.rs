@@ -1,3 +1,4 @@
+use crate::middle::lang_items::SpanSource;
 use crate::mir::interpret::ConstValue;
 use crate::mir::interpret::{LitToConstInput, Scalar};
 use crate::ty::subst::InternalSubsts;
@@ -67,7 +68,7 @@ impl<'tcx> Const<'tcx> {
         if let Some(lit_input) = lit_input {
             // If an error occurred, ignore that it's a literal and leave reporting the error up to
             // mir.
-            if let Ok(c) = tcx.at(expr.span).lit_to_const(lit_input) {
+            if let Ok(c) = tcx.at(SpanSource::Span(expr.span)).lit_to_const(lit_input) {
                 return c;
             } else {
                 tcx.sess.delay_span_bug(expr.span, "Const::from_anon_const: couldn't lit_to_const");

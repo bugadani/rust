@@ -7,6 +7,7 @@ use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_hir::{self as hir, def::DefKind, def_id::DefId, definitions::DefPathData};
 use rustc_index::vec::IndexVec;
 use rustc_macros::HashStable;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ich::StableHashingContext;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{
@@ -341,7 +342,7 @@ pub(super) fn from_known_layout<'tcx>(
                 let check_layout = compute()?;
                 if !mir_assign_valid_types(tcx.tcx, param_env, check_layout, known_layout) {
                     span_bug!(
-                        tcx.span,
+                        tcx.span(),
                         "expected type differs from actual type.\nexpected: {:?}\nactual: {:?}",
                         known_layout.ty,
                         check_layout.ty,
@@ -363,7 +364,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     ) -> Self {
         InterpCx {
             machine,
-            tcx: tcx.at(root_span),
+            tcx: tcx.at(SpanSource::Span(root_span)),
             param_env,
             memory: Memory::new(tcx, memory_extra),
             vtables: FxHashMap::default(),
@@ -372,7 +373,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
 
     #[inline(always)]
     pub fn cur_span(&self) -> Span {
-        self.stack().last().map(|f| f.current_span()).unwrap_or(self.tcx.span)
+        self.stack().last().map(|f| f.current_span()).unwrap_or(self.tcx.span())
     }
 
     #[inline(always)]

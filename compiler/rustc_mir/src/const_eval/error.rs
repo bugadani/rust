@@ -192,7 +192,7 @@ impl<'tcx> ConstEvalErr<'tcx> {
                 tcx.struct_span_lint_hir(
                     rustc_session::lint::builtin::CONST_ERR,
                     hir_id,
-                    tcx.span,
+                    tcx.span(),
                     |lint| finish(lint.build(message), Some(err_msg)),
                 );
                 ErrorHandled::Linted

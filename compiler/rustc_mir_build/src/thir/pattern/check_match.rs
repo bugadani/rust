@@ -11,6 +11,7 @@ use rustc_hir::def::*;
 use rustc_hir::def_id::DefId;
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{HirId, Pat};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_session::config::nightly_options;
 use rustc_session::lint::builtin::BINDINGS_WITH_VARIANT_NAME;
@@ -97,14 +98,14 @@ impl PatCtxt<'_, '_> {
                 PatternError::FloatBug => {
                     // FIXME(#31407) this is only necessary because float parsing is buggy
                     rustc_middle::mir::interpret::struct_error(
-                        self.tcx.at(pat_span),
+                        self.tcx.at(SpanSource::Span(pat_span)),
                         "could not evaluate float literal (see issue #31407)",
                     )
                     .emit();
                 }
                 PatternError::NonConstPath(span) => {
                     rustc_middle::mir::interpret::struct_error(
-                        self.tcx.at(span),
+                        self.tcx.at(SpanSource::Span(span)),
                         "runtime values cannot be referenced in patterns",
                     )
                     .emit();
@@ -594,8 +595,8 @@ fn maybe_point_at_variant(ty: Ty<'_>, patterns: &[super::Pat<'_>]) -> Vec<Span> 
 }
 
 /// Check if a by-value binding is by-value. That is, check if the binding's type is not `Copy`.
-fn is_binding_by_move(cx: &MatchVisitor<'_, '_>, hir_id: HirId, span: Span) -> bool {
-    !cx.typeck_results.node_type(hir_id).is_copy_modulo_regions(cx.tcx.at(span), cx.param_env)
+fn is_binding_by_move(cx: &MatchVisitor<'_, '_>, hir_id: HirId, span_source: SpanSource) -> bool {
+    !cx.typeck_results.node_type(hir_id).is_copy_modulo_regions(cx.tcx.at(span_source), cx.param_env)
 }
 
 /// Check that there are no borrow or move conflicts in `binding @ subpat` patterns.
@@ -621,7 +622,7 @@ fn check_borrow_conflicts_in_at_patterns(cx: &MatchVisitor<'_, '_>, pat: &Pat<'_
 
     // Get the binding move, extract the mutability if by-ref.
     let mut_outer = match typeck_results.extract_binding_mode(sess, pat.hir_id, pat.span) {
-        Some(ty::BindByValue(_)) if is_binding_by_move(cx, pat.hir_id, pat.span) => {
+        Some(ty::BindByValue(_)) if is_binding_by_move(cx, pat.hir_id, SpanSource::Span(pat.span)) => {
             // We have `x @ pat` where `x` is by-move. Reject all borrows in `pat`.
             let mut conflicts_ref = Vec::new();
             sub.each_binding(|_, hir_id, span, _| {
@@ -660,7 +661,7 @@ fn check_borrow_conflicts_in_at_patterns(cx: &MatchVisitor<'_, '_>, pat: &Pat<'_
                 (Mutability::Mut, Mutability::Mut) => conflicts_mut_mut.push((span, name)), // 2x `ref mut`.
                 _ => conflicts_mut_ref.push((span, name)), // `ref` + `ref mut` in either direction.
             },
-            Some(ty::BindByValue(_)) if is_binding_by_move(cx, hir_id, span) => {
+            Some(ty::BindByValue(_)) if is_binding_by_move(cx, hir_id, SpanSource::Span(span)) => {
                 conflicts_move.push((span, name)) // `ref mut?` + by-move conflict.
             }
             Some(ty::BindByValue(_)) | None => {} // `ref mut?` + by-copy is fine.

@@ -21,6 +21,7 @@ use rustc_middle::middle::dependency_format::Linkage;
 use rustc_middle::middle::exported_symbols::{
     metadata_symbol_name, ExportedSymbol, SymbolExportLevel,
 };
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::interpret;
 use rustc_middle::traits::specialization_graph;
 use rustc_middle::ty::codec::TyEncoder;
@@ -1046,7 +1047,7 @@ impl EncodeContext<'a, 'tcx> {
         record!(self.tables.kind[def_id] <- match impl_item.kind {
             ty::AssocKind::Const => {
                 if let hir::ImplItemKind::Const(_, body_id) = ast_item.kind {
-                    let qualifs = self.tcx.at(ast_item.span).mir_const_qualif(def_id);
+                    let qualifs = self.tcx.at(SpanSource::Span(ast_item.span)).mir_const_qualif(def_id);
 
                     EntryKind::AssocConst(
                         container,
@@ -1207,7 +1208,7 @@ impl EncodeContext<'a, 'tcx> {
             hir::ItemKind::Static(_, hir::Mutability::Mut, _) => EntryKind::MutStatic,
             hir::ItemKind::Static(_, hir::Mutability::Not, _) => EntryKind::ImmStatic,
             hir::ItemKind::Const(_, body_id) => {
-                let qualifs = self.tcx.at(item.span).mir_const_qualif(def_id);
+                let qualifs = self.tcx.at(SpanSource::Span(item.span)).mir_const_qualif(def_id);
                 EntryKind::Const(
                     qualifs,
                     self.encode_rendered_const_for_body(body_id)
@@ -1283,7 +1284,7 @@ impl EncodeContext<'a, 'tcx> {
                 let coerce_unsized_info =
                     trait_ref.and_then(|t| {
                         if Some(t.def_id) == self.tcx.lang_items().coerce_unsized_trait() {
-                            Some(self.tcx.at(item.span).coerce_unsized_info(def_id))
+                            Some(self.tcx.at(SpanSource::Span(item.span)).coerce_unsized_info(def_id))
                         } else {
                             None
                         }

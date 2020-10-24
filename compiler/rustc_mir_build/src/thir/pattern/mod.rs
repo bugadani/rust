@@ -15,6 +15,7 @@ use rustc_hir::def::{CtorKind, CtorOf, DefKind, Res};
 use rustc_hir::pat_util::EnumerateAndAdjustIterator;
 use rustc_hir::RangeEnd;
 use rustc_index::vec::Idx;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::interpret::{get_slice_bytes, sign_extend, ConstValue};
 use rustc_middle::mir::interpret::{ErrorHandled, LitToConstError, LitToConstInput};
 use rustc_middle::mir::UserTypeProjection;
@@ -874,7 +875,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
 
             let lit_input =
                 LitToConstInput { lit: &lit.node, ty: self.typeck_results.expr_ty(expr), neg };
-            match self.tcx.at(expr.span).lit_to_const(lit_input) {
+            match self.tcx.at(SpanSource::Span(expr.span)).lit_to_const(lit_input) {
                 Ok(val) => *self.const_to_pat(val, expr.hir_id, lit.span, false).kind,
                 Err(LitToConstError::UnparseableFloat) => {
                     self.errors.push(PatternError::FloatBug);

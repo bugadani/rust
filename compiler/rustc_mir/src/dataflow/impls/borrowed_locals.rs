@@ -1,10 +1,10 @@
 pub use super::*;
 
 use crate::dataflow::{AnalysisDomain, GenKill, GenKillAnalysis};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{ParamEnv, TyCtxt};
-use rustc_span::DUMMY_SP;
 
 pub type MaybeMutBorrowedLocals<'mir, 'tcx> = MaybeBorrowedLocals<MutBorrow<'mir, 'tcx>>;
 
@@ -230,7 +230,7 @@ impl MutBorrow<'mir, 'tcx> {
     ///
     /// [rust-lang/unsafe-code-guidelines#134]: https://github.com/rust-lang/unsafe-code-guidelines/issues/134
     fn shared_borrow_allows_mutation(&self, place: Place<'tcx>) -> bool {
-        !place.ty(self.body, self.tcx).ty.is_freeze(self.tcx.at(DUMMY_SP), self.param_env)
+        !place.ty(self.body, self.tcx).ty.is_freeze(self.tcx.at(SpanSource::DUMMY), self.param_env)
     }
 }
 

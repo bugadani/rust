@@ -107,8 +107,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let arm_ty = if source_if
                 && if_no_else
                 && i != 0
-                && self.if_fallback_coercion(SpanSource::Span(expr.span), &arms[0].body, &mut coercion)
-            {
+                && self.if_fallback_coercion(
+                    SpanSource::Span(expr.span),
+                    &arms[0].body,
+                    &mut coercion,
+                ) {
                 tcx.ty_error()
             } else {
                 // Only call this if this is not an `if` expr with an expected type and no `else`
@@ -300,7 +303,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         error
     }
 
-    fn maybe_get_coercion_reason(&self, hir_id: hir::HirId, span_source: SpanSource) -> Option<(Span, String)> {
+    fn maybe_get_coercion_reason(
+        &self,
+        hir_id: hir::HirId,
+        span_source: SpanSource,
+    ) -> Option<(Span, String)> {
         use hir::Node::{Block, Item, Local};
 
         let hir = self.tcx.hir();

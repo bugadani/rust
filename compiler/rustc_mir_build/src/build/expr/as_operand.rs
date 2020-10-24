@@ -3,6 +3,7 @@
 use crate::build::expr::category::Category;
 use crate::build::{BlockAnd, BlockAndExtension, Builder};
 use crate::thir::*;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::region;
 use rustc_middle::mir::*;
 
@@ -170,9 +171,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             let span = expr.span;
             let param_env = this.hir.param_env;
 
-            if !ty.is_sized(tcx.at(span), param_env) {
+            if !ty.is_sized(tcx.at(SpanSource::Span(span)), param_env) {
                 // !sized means !copy, so this is an unsized move
-                assert!(!ty.is_copy_modulo_regions(tcx.at(span), param_env));
+                assert!(!ty.is_copy_modulo_regions(tcx.at(SpanSource::Span(span)), param_env));
 
                 // As described above, detect the case where we are passing a value of unsized
                 // type, and that value is coming from the deref of a box.
