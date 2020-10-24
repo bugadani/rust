@@ -422,13 +422,11 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                                 // This is a default type parameter.
                                 self.normalize_ty(
                                     span_source,
-                                    tcx.at(span_source)
-                                        .type_of(param.def_id)
-                                        .subst_spanned(
-                                            tcx,
-                                            substs.unwrap(),
-                                            Some(span_source.to_span(tcx)),
-                                        ), // FIXME
+                                    tcx.at(span_source).type_of(param.def_id).subst_spanned(
+                                        tcx,
+                                        substs.unwrap(),
+                                        Some(span_source.to_span(tcx)),
+                                    ), // FIXME
                                 )
                                 .into()
                             }
@@ -1980,8 +1978,10 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 assert_eq!(opt_self_ty, None);
                 self.prohibit_generics(path.segments);
                 // Try to evaluate any array length constants.
-                let normalized_ty =
-                    self.normalize_ty(SpanSource::Span(span), tcx.at(SpanSource::Span(span)).type_of(def_id));
+                let normalized_ty = self.normalize_ty(
+                    SpanSource::Span(span),
+                    tcx.at(SpanSource::Span(span)).type_of(def_id),
+                );
                 if forbid_generic && normalized_ty.needs_subst() {
                     let mut err = tcx.sess.struct_span_err(
                         path.span,

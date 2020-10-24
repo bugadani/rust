@@ -320,7 +320,12 @@ fn make_mirror_unadjusted<'a, 'tcx>(
             } else {
                 if let hir::ExprKind::Lit(ref lit) = arg.kind {
                     ExprKind::Literal {
-                        literal: cx.const_eval_literal(&lit.node, expr_ty, SpanSource::Span(lit.span), true),
+                        literal: cx.const_eval_literal(
+                            &lit.node,
+                            expr_ty,
+                            SpanSource::Span(lit.span),
+                            true,
+                        ),
                         user_ty: None,
                         const_id: None,
                     }

@@ -7,8 +7,8 @@ use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_hir::{self as hir, def::DefKind, def_id::DefId, definitions::DefPathData};
 use rustc_index::vec::IndexVec;
 use rustc_macros::HashStable;
-use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ich::StableHashingContext;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{
     sign_extend, truncate, GlobalId, InterpResult, Pointer, Scalar,

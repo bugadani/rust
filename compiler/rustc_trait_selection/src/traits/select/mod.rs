@@ -561,7 +561,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                                     def,
                                     substs,
                                     promoted,
-                                    Some(obligation.cause.span_source.to_span(self.tcx())),
+                                    Some(obligation.cause.span_source),
                                 )
                                 .map(|val| ty::Const::from_value(self.tcx(), val, c.ty))
                         } else {

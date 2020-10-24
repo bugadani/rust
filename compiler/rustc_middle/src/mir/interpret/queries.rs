@@ -5,7 +5,6 @@ use crate::mir;
 use crate::ty::subst::{InternalSubsts, SubstsRef};
 use crate::ty::{self, TyCtxt};
 use rustc_hir::def_id::DefId;
-use rustc_span::Span;
 
 impl<'tcx> TyCtxt<'tcx> {
     /// Evaluates a constant without providing any substitutions. This is useful to evaluate consts
@@ -38,12 +37,12 @@ impl<'tcx> TyCtxt<'tcx> {
         def: ty::WithOptConstParam<DefId>,
         substs: SubstsRef<'tcx>,
         promoted: Option<mir::Promoted>,
-        span: Option<Span>,
+        span_source: Option<SpanSource>,
     ) -> EvalToConstValueResult<'tcx> {
         match ty::Instance::resolve_opt_const_arg(self, param_env, def, substs) {
             Ok(Some(instance)) => {
                 let cid = GlobalId { instance, promoted };
-                self.const_eval_global_id(param_env, cid, span)
+                self.const_eval_global_id(param_env, cid, span_source)
             }
             Ok(None) => Err(ErrorHandled::TooGeneric),
             Err(error_reported) => Err(ErrorHandled::Reported(error_reported)),
@@ -54,9 +53,9 @@ impl<'tcx> TyCtxt<'tcx> {
         self,
         param_env: ty::ParamEnv<'tcx>,
         instance: ty::Instance<'tcx>,
-        span: Option<Span>,
+        span_source: Option<SpanSource>,
     ) -> EvalToConstValueResult<'tcx> {
-        self.const_eval_global_id(param_env, GlobalId { instance, promoted: None }, span)
+        self.const_eval_global_id(param_env, GlobalId { instance, promoted: None }, span_source)
     }
 
     /// Evaluate a constant.
@@ -64,13 +63,13 @@ impl<'tcx> TyCtxt<'tcx> {
         self,
         param_env: ty::ParamEnv<'tcx>,
         cid: GlobalId<'tcx>,
-        span: Option<Span>,
+        span_source: Option<SpanSource>,
     ) -> EvalToConstValueResult<'tcx> {
         // Const-eval shouldn't depend on lifetimes at all, so we can erase them, which should
         // improve caching of queries.
         let inputs = self.erase_regions(&param_env.and(cid));
-        if let Some(span) = span {
-            self.at(SpanSource::Span(span)).eval_to_const_value_raw(inputs)
+        if let Some(span_source) = span_source {
+            self.at(span_source).eval_to_const_value_raw(inputs)
         } else {
             self.eval_to_const_value_raw(inputs)
         }

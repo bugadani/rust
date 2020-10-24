@@ -721,7 +721,8 @@ impl Visitor<'tcx> for Checker<'tcx> {
                 for field in &adt_def.non_enum_variant().fields {
                     let field_ty = field.ty(self.tcx, substs);
                     if !field_ty.ty_adt_def().map_or(false, |adt_def| adt_def.is_manually_drop())
-                        && !field_ty.is_copy_modulo_regions(self.tcx.at(SpanSource::DUMMY), param_env)
+                        && !field_ty
+                            .is_copy_modulo_regions(self.tcx.at(SpanSource::DUMMY), param_env)
                     {
                         if field_ty.needs_drop(self.tcx, param_env) {
                             // Avoid duplicate error: This will error later anyway because fields

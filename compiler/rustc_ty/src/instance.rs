@@ -250,7 +250,8 @@ fn resolve_associated_item<'tcx>(
                 if name == sym::clone {
                     let self_ty = trait_ref.self_ty();
 
-                    let is_copy = self_ty.is_copy_modulo_regions(tcx.at(SpanSource::DUMMY), param_env);
+                    let is_copy =
+                        self_ty.is_copy_modulo_regions(tcx.at(SpanSource::DUMMY), param_env);
                     match self_ty.kind() {
                         _ if is_copy => (),
                         ty::Array(..) | ty::Closure(..) | ty::Tuple(..) => {}

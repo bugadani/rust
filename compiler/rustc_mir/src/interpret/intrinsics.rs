@@ -152,8 +152,11 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                     sym::type_name => self.tcx.mk_static_str(),
                     _ => bug!("already checked for nullary intrinsics"),
                 };
-                let val =
-                    self.tcx.const_eval_global_id(self.param_env, gid, Some(self.tcx.span()))?;
+                let val = self.tcx.const_eval_global_id(
+                    self.param_env,
+                    gid,
+                    Some(self.tcx.span_source),
+                )?;
                 let const_ = ty::Const { val: ty::ConstKind::Value(val), ty };
                 let val = self.const_to_op(&const_, None)?;
                 self.copy_op(val, dest)?;

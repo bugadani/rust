@@ -820,7 +820,7 @@ impl AutoTraitFinder<'tcx> {
                                 def,
                                 substs,
                                 promoted,
-                                Some(obligation.cause.span_source.to_span(select.tcx())),
+                                Some(obligation.cause.span_source),
                             ) {
                                 Ok(val) => Ok(ty::Const::from_value(select.tcx(), val, c.ty)),
                                 Err(err) => Err(err),

@@ -1512,7 +1512,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         def: ty::WithOptConstParam<DefId>,
         substs: SubstsRef<'tcx>,
         promoted: Option<mir::Promoted>,
-        span: Option<Span>,
+        span_source: Option<SpanSource>,
     ) -> EvalToConstValueResult<'tcx> {
         let mut original_values = OriginalQueryValues::default();
         let canonical = self.canonicalize_query(&(param_env, substs), &mut original_values);
@@ -1520,7 +1520,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         let (param_env, substs) = canonical.value;
         // The return value is the evaluated value which doesn't contain any reference to inference
         // variables, thus we don't need to substitute back the original values.
-        self.tcx.const_eval_resolve(param_env, def, substs, promoted, span)
+        self.tcx.const_eval_resolve(param_env, def, substs, promoted, span_source)
     }
 
     /// If `typ` is a type variable of some kind, resolve it one level

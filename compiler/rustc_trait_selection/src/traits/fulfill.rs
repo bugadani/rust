@@ -538,7 +538,7 @@ impl<'a, 'b, 'tcx> FulfillProcessor<'a, 'b, 'tcx> {
                                 def,
                                 substs,
                                 promoted,
-                                Some(obligation.cause.span_source.to_span(self.selcx.tcx())),
+                                Some(obligation.cause.span_source),
                             ) {
                                 Ok(val) => Ok(Const::from_value(self.selcx.tcx(), val, c.ty)),
                                 Err(ErrorHandled::TooGeneric) => {

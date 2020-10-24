@@ -381,7 +381,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
             let expr = self.tcx.hir().expect_expr(body_id.hir_id);
             local_visitor.visit_expr(expr);
         }
-        let err_span = if let Some(pattern) = local_visitor.found_arg_pattern {
+        let err_span_source = if let Some(pattern) = local_visitor.found_arg_pattern {
             SpanSource::Span(pattern.span)
         } else if let Some(span) = arg_data.span_source {
             // `span` here lets us point at `sum` instead of the entire right hand side expr:
@@ -445,7 +445,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         // ```
         let error_code = error_code.into();
         let mut err = self.tcx.sess.struct_span_err_with_code(
-            err_span.to_span(self.tcx),
+            err_span_source.to_span(self.tcx),
             &format!("type annotations needed{}", ty_msg),
             error_code,
         );

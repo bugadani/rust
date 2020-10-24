@@ -92,7 +92,11 @@ where
 
             for component in components {
                 match *component.kind() {
-                    _ if component.is_copy_modulo_regions(tcx.at(SpanSource::DUMMY), self.param_env) => (),
+                    _ if component
+                        .is_copy_modulo_regions(tcx.at(SpanSource::DUMMY), self.param_env) =>
+                    {
+                        ()
+                    }
 
                     ty::Closure(_, substs) => {
                         for upvar_ty in substs.as_closure().upvar_tys() {

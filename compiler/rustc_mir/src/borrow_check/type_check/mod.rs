@@ -31,7 +31,7 @@ use rustc_middle::ty::{
     self, CanonicalUserTypeAnnotation, CanonicalUserTypeAnnotations, RegionVid, ToPredicate, Ty,
     TyCtxt, UserType, UserTypeAnnotationIndex, WithConstness,
 };
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::Span;
 use rustc_target::abi::VariantIdx;
 use rustc_trait_selection::infer::InferCtxtExt as _;
 use rustc_trait_selection::opaque_types::{GenerateMemberConstraints, InferCtxtExt};
@@ -71,7 +71,7 @@ macro_rules! span_mirbug {
     ($context:expr, $elem:expr, $($message:tt)*) => ({
         $crate::borrow_check::type_check::mirbug(
             $context.tcx(),
-            $context.last_span,
+            $context.last_span_source.to_span($context.tcx()),
             &format!(
                 "broken MIR in {:?} ({:?}): {}",
                 $context.body.source.def_id(),
@@ -267,14 +267,14 @@ struct TypeVerifier<'a, 'b, 'tcx> {
     cx: &'a mut TypeChecker<'b, 'tcx>,
     body: &'b Body<'tcx>,
     promoted: &'b IndexVec<Promoted, Body<'tcx>>,
-    last_span: Span,
+    last_span_source: SpanSource,
     errors_reported: bool,
 }
 
 impl<'a, 'b, 'tcx> Visitor<'tcx> for TypeVerifier<'a, 'b, 'tcx> {
     fn visit_span(&mut self, span: &Span) {
         if !span.is_dummy() {
-            self.last_span = *span;
+            self.last_span_source = SpanSource::Span(*span);
         }
     }
 
@@ -455,7 +455,13 @@ impl<'a, 'b, 'tcx> TypeVerifier<'a, 'b, 'tcx> {
         body: &'b Body<'tcx>,
         promoted: &'b IndexVec<Promoted, Body<'tcx>>,
     ) -> Self {
-        TypeVerifier { body, promoted, cx, last_span: body.span, errors_reported: false }
+        TypeVerifier {
+            body,
+            promoted,
+            cx,
+            last_span_source: SpanSource::Span(body.span),
+            errors_reported: false,
+        }
     }
 
     fn tcx(&self) -> TyCtxt<'tcx> {
@@ -495,8 +501,7 @@ impl<'a, 'b, 'tcx> TypeVerifier<'a, 'b, 'tcx> {
         if let PlaceContext::NonMutatingUse(NonMutatingUseContext::Copy) = context {
             let tcx = self.tcx();
             let trait_ref = ty::TraitRef {
-                def_id: tcx
-                    .require_lang_item(LangItem::Copy, Some(SpanSource::Span(self.last_span))),
+                def_id: tcx.require_lang_item(LangItem::Copy, Some(self.last_span_source)),
                 substs: tcx.mk_substs_trait(place_ty.ty, &[]),
             };
 
@@ -800,7 +805,7 @@ impl<'a, 'b, 'tcx> TypeVerifier<'a, 'b, 'tcx> {
 struct TypeChecker<'a, 'tcx> {
     infcx: &'a InferCtxt<'a, 'tcx>,
     param_env: ty::ParamEnv<'tcx>,
-    last_span: Span,
+    last_span_source: SpanSource,
     body: &'a Body<'tcx>,
     /// User type annotations are shared between the main MIR and the MIR of
     /// all of the promoted items.
@@ -961,7 +966,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
     ) -> Self {
         let mut checker = Self {
             infcx,
-            last_span: DUMMY_SP,
+            last_span_source: SpanSource::DUMMY,
             body,
             user_type_annotations: &body.user_type_annotations,
             param_env,
@@ -1461,10 +1466,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                 self.check_rvalue(body, rv, location);
                 if !self.tcx().features().unsized_locals {
                     let trait_ref = ty::TraitRef {
-                        def_id: tcx.require_lang_item(
-                            LangItem::Sized,
-                            Some(SpanSource::Span(self.last_span)),
-                        ),
+                        def_id: tcx.require_lang_item(LangItem::Sized, Some(self.last_span_source)),
                         substs: tcx.mk_substs_trait(place_ty, &[]),
                     };
                     self.prove_trait_ref(
@@ -1777,7 +1779,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
 
     fn check_iscleanup(&mut self, body: &Body<'tcx>, block_data: &BasicBlockData<'tcx>) {
         let is_cleanup = block_data.is_cleanup;
-        self.last_span = block_data.terminator().source_info.span;
+        self.last_span_source = SpanSource::Span(block_data.terminator().source_info.span);
         match block_data.terminator().kind {
             TerminatorKind::Goto { target } => {
                 self.assert_iscleanup(body, block_data, target, is_cleanup)
@@ -2016,7 +2018,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                                     ty::Binder::bind(ty::TraitRef::new(
                                         self.tcx().require_lang_item(
                                             LangItem::Copy,
-                                            Some(SpanSource::Span(self.last_span)),
+                                            Some(self.last_span_source),
                                         ),
                                         tcx.mk_substs_trait(ty, &[]),
                                     ))
@@ -2040,8 +2042,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                 }
 
                 let trait_ref = ty::TraitRef {
-                    def_id: tcx
-                        .require_lang_item(LangItem::Sized, Some(SpanSource::Span(self.last_span))),
+                    def_id: tcx.require_lang_item(LangItem::Sized, Some(self.last_span_source)),
                     substs: tcx.mk_substs_trait(ty, &[]),
                 };
 
@@ -2141,7 +2142,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                         let trait_ref = ty::TraitRef {
                             def_id: tcx.require_lang_item(
                                 LangItem::CoerceUnsized,
-                                Some(SpanSource::Span(self.last_span)),
+                                Some(self.last_span_source),
                             ),
                             substs: tcx.mk_substs_trait(op.ty(body, tcx), &[ty.into()]),
                         };
@@ -2748,7 +2749,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
     }
 
     fn typeck_mir(&mut self, body: &Body<'tcx>) {
-        self.last_span = body.span;
+        self.last_span_source = SpanSource::Span(body.span);
         debug!("run_on_mir: {:?}", body.span);
 
         for (local, local_decl) in body.local_decls.iter_enumerated() {
@@ -2759,7 +2760,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
             let mut location = Location { block, statement_index: 0 };
             for stmt in &block_data.statements {
                 if !stmt.source_info.span.is_dummy() {
-                    self.last_span = stmt.source_info.span;
+                    self.last_span_source = SpanSource::Span(stmt.source_info.span);
                 }
                 self.check_stmt(body, stmt, location);
                 location.statement_index += 1;

@@ -130,13 +130,22 @@ impl<'a, 'tcx> Cx<'a, 'tcx> {
         sp_source: SpanSource,
         neg: bool,
     ) -> &'tcx ty::Const<'tcx> {
-        trace!("const_eval_literal: {:#?}, {:?}, {:?}, {:?}", lit, ty, sp_source.to_span(self.tcx), neg);
+        trace!(
+            "const_eval_literal: {:#?}, {:?}, {:?}, {:?}",
+            lit,
+            ty,
+            sp_source.to_span(self.tcx),
+            neg
+        );
 
         match self.tcx.at(sp_source).lit_to_const(LitToConstInput { lit, ty, neg }) {
             Ok(c) => c,
             Err(LitToConstError::UnparseableFloat) => {
                 // FIXME(#31407) this is only necessary because float parsing is buggy
-                self.tcx.sess.span_err(sp_source.to_span(self.tcx), "could not evaluate float literal (see issue #31407)");
+                self.tcx.sess.span_err(
+                    sp_source.to_span(self.tcx),
+                    "could not evaluate float literal (see issue #31407)",
+                );
                 // create a dummy value and continue compiling
                 Const::from_bits(self.tcx, 0, self.param_env.and(ty))
             }
