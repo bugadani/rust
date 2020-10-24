@@ -435,11 +435,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         );
 
         self.add_obligations_for_parameters(
-            traits::ObligationCause::new(
-                self.span_source,
-                self.body_id,
-                traits::ObligationCauseCode::MiscObligation,
-            ),
+            traits::ObligationCause::misc_with_span_source(self.span_source, self.body_id),
             method_predicates,
         );
 

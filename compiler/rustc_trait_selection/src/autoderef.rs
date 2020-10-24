@@ -131,11 +131,7 @@ impl<'a, 'tcx> Autoderef<'a, 'tcx> {
             substs: tcx.mk_substs_trait(ty, &[]),
         };
 
-        let cause = traits::ObligationCause::new(
-            self.span_source,
-            self.body_id,
-            traits::ObligationCauseCode::MiscObligation,
-        );
+        let cause = traits::ObligationCause::misc_with_span_source(self.span_source, self.body_id);
 
         let obligation = traits::Obligation::new(
             cause.clone(),

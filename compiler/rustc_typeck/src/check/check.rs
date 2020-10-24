@@ -573,11 +573,7 @@ fn check_opaque_meets_bounds<'tcx>(
         let infcx = &inh.infcx;
         let opaque_ty = tcx.mk_opaque(def_id.to_def_id(), substs);
 
-        let misc_cause = traits::ObligationCause::new(
-            span_source,
-            hir_id,
-            traits::ObligationCauseCode::MiscObligation,
-        );
+        let misc_cause = traits::ObligationCause::misc_with_span_source(span_source, hir_id);
 
         let (_, opaque_type_map) = inh.register_infer_ok_obligations(
             infcx.instantiate_opaque_types(def_id, hir_id, param_env, &opaque_ty, span_source),

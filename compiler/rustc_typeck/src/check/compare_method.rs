@@ -212,10 +212,9 @@ fn compare_predicate_entailment<'tcx>(
     // Construct trait parameter environment and then shift it into the placeholder viewpoint.
     // The key step here is to update the caller_bounds's predicates to be
     // the new hybrid bounds we computed.
-    let normalize_cause = traits::ObligationCause::new(
+    let normalize_cause = traits::ObligationCause::misc_with_span_source(
         impl_m_span_source,
         impl_m_hir_id,
-        traits::ObligationCauseCode::MiscObligation,
     );
     let param_env =
         ty::ParamEnv::new(tcx.intern_predicates(&hybrid_preds.predicates), Reveal::UserFacing);
@@ -1156,10 +1155,9 @@ fn compare_type_predicate_entailment<'tcx>(
 
     debug!("compare_type_predicate_entailment: bounds={:?}", hybrid_preds);
 
-    let normalize_cause = traits::ObligationCause::new(
+    let normalize_cause = traits::ObligationCause::misc_with_span_source(
         impl_ty_span_source,
         impl_ty_hir_id,
-        traits::ObligationCauseCode::MiscObligation,
     );
     let param_env =
         ty::ParamEnv::new(tcx.intern_predicates(&hybrid_preds.predicates), Reveal::UserFacing);
@@ -1278,10 +1276,9 @@ pub fn check_type_bounds<'tcx>(
         let mut selcx = traits::SelectionContext::new(&infcx);
 
         let impl_ty_hir_id = tcx.hir().local_def_id_to_hir_id(impl_ty.def_id.expect_local());
-        let normalize_cause = traits::ObligationCause::new(
+        let normalize_cause = traits::ObligationCause::misc_with_span_source(
             impl_ty_span_source,
             impl_ty_hir_id,
-            traits::ObligationCauseCode::MiscObligation,
         );
         let mk_cause = |span| {
             ObligationCause::new(

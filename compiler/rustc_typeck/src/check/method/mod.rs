@@ -398,11 +398,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         assert!(!bounds.has_escaping_bound_vars());
 
-        let cause = traits::ObligationCause::new(
-            span_source,
-            self.body_id,
-            traits::ObligationCauseCode::MiscObligation,
-        );
+        let cause = traits::ObligationCause::misc_with_span_source(span_source, self.body_id);
         obligations.extend(traits::predicates_for_generics(cause.clone(), self.param_env, bounds));
 
         // Also add an obligation for the method type being well-formed.

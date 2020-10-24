@@ -78,7 +78,7 @@ impl<'cx, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'cx, 'tcx> {
     {
         debug!("partially_normalize_associated_types_in(value={:?})", value);
         let mut selcx = traits::SelectionContext::new(self);
-        let cause = ObligationCause::new(span_source, body_id, ObligationCauseCode::MiscObligation);
+        let cause = ObligationCause::misc_with_span_source(span_source, body_id);
         let traits::Normalized { value, obligations } =
             traits::normalize(&mut selcx, param_env, cause, value);
         debug!(

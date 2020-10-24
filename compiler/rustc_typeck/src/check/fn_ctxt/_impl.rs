@@ -1486,11 +1486,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         query_result: &Canonical<'tcx, QueryResponse<'tcx, Ty<'tcx>>>,
     ) -> InferResult<'tcx, Ty<'tcx>> {
         self.instantiate_query_response_and_region_obligations(
-            &traits::ObligationCause::new(
-                span_source,
-                self.body_id,
-                ObligationCauseCode::MiscObligation,
-            ),
+            &traits::ObligationCause::misc_with_span_source(span_source, self.body_id),
             self.param_env,
             original_values,
             query_result,
