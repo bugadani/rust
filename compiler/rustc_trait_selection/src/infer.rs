@@ -4,13 +4,12 @@ use crate::traits::{self, TraitEngine, TraitEngineExt};
 use rustc_hir as hir;
 use rustc_hir::lang_items::LangItem;
 use rustc_infer::infer::outlives::env::OutlivesEnvironment;
-use rustc_infer::traits::{ObligationCause, ObligationCauseCode};
+use rustc_infer::traits::ObligationCause;
 use rustc_middle::arena::ArenaAllocatable;
 use rustc_middle::infer::canonical::{Canonical, CanonicalizedQueryResponse, QueryResponse};
 use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::traits::query::Fallible;
 use rustc_middle::ty::{self, Ty, TypeFoldable};
-use rustc_span::DUMMY_SP;
 
 use std::fmt::Debug;
 
@@ -45,8 +44,7 @@ impl<'cx, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'cx, 'tcx> {
         let ty = self.resolve_vars_if_possible(&ty);
 
         if !(param_env, ty).needs_infer() {
-            return ty
-                .is_copy_modulo_regions(self.tcx.at(span_source.to_span(self.tcx)), param_env);
+            return ty.is_copy_modulo_regions(self.tcx.at(span_source.to_span(self.tcx)), param_env);
         }
 
         let copy_def_id = self.tcx.require_lang_item(LangItem::Copy, None);
@@ -129,7 +127,7 @@ impl<'tcx> InferCtxtBuilderExt<'tcx> for InferCtxtBuilder<'tcx> {
         Canonical<'tcx, QueryResponse<'tcx, R>>: ArenaAllocatable<'tcx>,
     {
         self.enter_with_canonical(
-            DUMMY_SP,
+            SpanSource::DUMMY,
             canonical_key,
             |ref infcx, key, canonical_inference_vars| {
                 let mut fulfill_cx = TraitEngine::new(infcx.tcx);

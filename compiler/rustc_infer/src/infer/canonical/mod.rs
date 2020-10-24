@@ -28,7 +28,6 @@ use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::subst::GenericArg;
 use rustc_middle::ty::{self, BoundVar, List};
-use rustc_span::source_map::Span;
 
 pub use rustc_middle::infer::canonical::*;
 use substitute::CanonicalExt;
@@ -53,7 +52,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
 
     pub fn instantiate_canonical_with_fresh_inference_vars<T>(
         &self,
-        span: Span,
+        span_source: SpanSource,
         canonical: &Canonical<'tcx, T>,
     ) -> (T, CanonicalVarValues<'tcx>)
     where
@@ -70,7 +69,7 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
             .collect();
 
         let canonical_inference_vars =
-            self.instantiate_canonical_vars(SpanSource::Span(span), canonical.variables, |ui| {
+            self.instantiate_canonical_vars(span_source, canonical.variables, |ui| {
                 universes[ui]
             });
         let result = canonical.substitute(self.tcx, &canonical_inference_vars);

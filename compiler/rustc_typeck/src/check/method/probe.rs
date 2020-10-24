@@ -29,7 +29,7 @@ use rustc_middle::ty::{
 use rustc_session::config::nightly_options;
 use rustc_session::lint;
 use rustc_span::def_id::LocalDefId;
-use rustc_span::{symbol::Ident, Span, Symbol, DUMMY_SP};
+use rustc_span::{symbol::Ident, Span, Symbol};
 use rustc_trait_selection::autoderef::{self, Autoderef};
 use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
 use rustc_trait_selection::traits::query::method_autoderef::MethodAutoderefBadTy;
@@ -326,7 +326,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let infcx = &self.infcx;
                 let (ParamEnvAnd { param_env: _, value: self_ty }, canonical_inference_vars) =
                     infcx.instantiate_canonical_with_fresh_inference_vars(
-                        span_source.to_span(self.tcx), // FIXME
+                        span_source,
                         &param_env_and_self_ty,
                     );
                 debug!(
@@ -455,7 +455,7 @@ fn method_autoderef_steps<'tcx>(
 ) -> MethodAutoderefStepsResult<'tcx> {
     debug!("method_autoderef_steps({:?})", goal);
 
-    tcx.infer_ctxt().enter_with_canonical(DUMMY_SP, &goal, |ref infcx, goal, inference_vars| {
+    tcx.infer_ctxt().enter_with_canonical(SpanSource::DUMMY, &goal, |ref infcx, goal, inference_vars| {
         let ParamEnvAnd { param_env, value: self_ty } = goal;
 
         let mut autoderef = Autoderef::new(
@@ -620,8 +620,10 @@ impl<'a, 'tcx> ProbeContext<'a, 'tcx> {
                     // will still match the original object type, but it won't pollute our
                     // type variables in any form, so just do that!
                     let (QueryResponse { value: generalized_self_ty, .. }, _ignored_var_values) =
-                        self.fcx
-                            .instantiate_canonical_with_fresh_inference_vars(self.span, &self_ty);
+                        self.fcx.instantiate_canonical_with_fresh_inference_vars(
+                            SpanSource::Span(self.span),
+                            &self_ty,
+                        );
 
                     self.assemble_inherent_candidates_from_object(generalized_self_ty);
                     self.assemble_inherent_impl_candidates_for_type(p.def_id());

@@ -48,7 +48,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     // user-provided signature (e.g., the `_` in the code
                     // above) with fresh variables.
                     let (poly_sig, _) = self.infcx.instantiate_canonical_with_fresh_inference_vars(
-                        body.span,
+                        SpanSource::Span(body.span),
                         &user_provided_poly_sig,
                     );
 

@@ -984,8 +984,10 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
         );
         for user_annotation in self.user_type_annotations {
             let CanonicalUserTypeAnnotation { span, ref user_ty, inferred_ty } = *user_annotation;
-            let (annotation, _) =
-                self.infcx.instantiate_canonical_with_fresh_inference_vars(span, user_ty);
+            let (annotation, _) = self.infcx.instantiate_canonical_with_fresh_inference_vars(
+                SpanSource::Span(span),
+                user_ty,
+            );
             match annotation {
                 UserType::Ty(mut ty) => {
                     ty = self.normalize(ty, Locations::All(span));

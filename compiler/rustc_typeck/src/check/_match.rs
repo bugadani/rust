@@ -107,7 +107,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let arm_ty = if source_if
                 && if_no_else
                 && i != 0
-                && self.if_fallback_coercion(expr.span, &arms[0].body, &mut coercion)
+                && self.if_fallback_coercion(SpanSource::Span(expr.span), &arms[0].body, &mut coercion)
             {
                 tcx.ty_error()
             } else {
@@ -271,14 +271,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Returns `true` if there was an error forcing the coercion to the `()` type.
     fn if_fallback_coercion(
         &self,
-        span: Span,
+        span_source: SpanSource,
         then_expr: &'tcx hir::Expr<'tcx>,
         coercion: &mut CoerceMany<'tcx, '_, rustc_hir::Arm<'tcx>>,
     ) -> bool {
         // If this `if` expr is the parent's function return expr,
         // the cause of the type coercion is the return type, point at it. (#25228)
-        let ret_reason = self.maybe_get_coercion_reason(then_expr.hir_id, span);
-        let cause = self.cause(SpanSource::Span(span), ObligationCauseCode::IfExpressionWithNoElse);
+        let ret_reason = self.maybe_get_coercion_reason(then_expr.hir_id, span_source);
+        let cause = self.cause(span_source, ObligationCauseCode::IfExpressionWithNoElse);
         let mut error = false;
         coercion.coerce_forced_unit(
             self,
@@ -300,7 +300,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         error
     }
 
-    fn maybe_get_coercion_reason(&self, hir_id: hir::HirId, span: Span) -> Option<(Span, String)> {
+    fn maybe_get_coercion_reason(&self, hir_id: hir::HirId, span_source: SpanSource) -> Option<(Span, String)> {
         use hir::Node::{Block, Item, Local};
 
         let hir = self.tcx.hir();
@@ -316,7 +316,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 (&block.expr, parent)
             {
                 // check that the `if` expr without `else` is the fn body's expr
-                if expr.span == span {
+                if SpanSource::Span(expr.span) == span_source {
                     return self.get_fn_decl(hir_id).and_then(|(fn_decl, _)| {
                         let span = fn_decl.output.span();
                         let snippet = self.tcx.sess.source_map().span_to_snippet(span).ok()?;

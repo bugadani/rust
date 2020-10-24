@@ -566,7 +566,7 @@ impl<'tcx> InferCtxtBuilder<'tcx> {
     /// (in other words, `S(C) = V`).
     pub fn enter_with_canonical<T, R>(
         &mut self,
-        span: Span,
+        span_source: SpanSource,
         canonical: &Canonical<'tcx, T>,
         f: impl for<'a> FnOnce(InferCtxt<'a, 'tcx>, T, CanonicalVarValues<'tcx>) -> R,
     ) -> R
@@ -575,7 +575,7 @@ impl<'tcx> InferCtxtBuilder<'tcx> {
     {
         self.enter(|infcx| {
             let (value, subst) =
-                infcx.instantiate_canonical_with_fresh_inference_vars(span, canonical);
+                infcx.instantiate_canonical_with_fresh_inference_vars(span_source, canonical);
             f(infcx, value, subst)
         })
     }

@@ -1,7 +1,7 @@
 use rustc_infer::infer::TyCtxtInferExt;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::{ParamEnvAnd, TyCtxt};
-use rustc_span::source_map::DUMMY_SP;
 use rustc_trait_selection::traits::query::CanonicalPredicateGoal;
 use rustc_trait_selection::traits::{
     EvaluationResult, Obligation, ObligationCause, OverflowError, SelectionContext, TraitQueryMode,
@@ -17,7 +17,7 @@ fn evaluate_obligation<'tcx>(
 ) -> Result<EvaluationResult, OverflowError> {
     debug!("evaluate_obligation(canonical_goal={:#?})", canonical_goal);
     tcx.infer_ctxt().enter_with_canonical(
-        DUMMY_SP,
+        SpanSource::DUMMY,
         &canonical_goal,
         |ref infcx, goal, _canonical_inference_vars| {
             debug!("evaluate_obligation: goal={:#?}", goal);

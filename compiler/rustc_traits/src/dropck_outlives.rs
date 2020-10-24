@@ -3,6 +3,7 @@ use rustc_hir::def_id::DefId;
 use rustc_infer::infer::canonical::{Canonical, QueryResponse};
 use rustc_infer::infer::TyCtxtInferExt;
 use rustc_infer::traits::TraitEngineExt as _;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::subst::{InternalSubsts, Subst};
 use rustc_middle::ty::{self, ParamEnvAnd, Ty, TyCtxt};
@@ -28,7 +29,7 @@ fn dropck_outlives<'tcx>(
     debug!("dropck_outlives(goal={:#?})", canonical_goal);
 
     tcx.infer_ctxt().enter_with_canonical(
-        DUMMY_SP,
+        SpanSource::DUMMY,
         &canonical_goal,
         |ref infcx, goal, canonical_inference_vars| {
             let tcx = infcx.tcx;

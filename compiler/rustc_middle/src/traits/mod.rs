@@ -138,19 +138,23 @@ impl<'tcx> ObligationCause<'tcx> {
     }
 
     pub fn misc(span: Span, body_id: hir::HirId) -> ObligationCause<'tcx> {
-        ObligationCause::new(SpanSource::Span(span), body_id, MiscObligation)
+        ObligationCause::misc_with_span_source(SpanSource::Span(span), body_id)
     }
 
     pub fn misc_with_def_id(def_id: DefId, body_id: hir::HirId) -> ObligationCause<'tcx> {
-        ObligationCause::new(SpanSource::DefId(def_id), body_id, MiscObligation)
+        ObligationCause::misc_with_span_source(SpanSource::DefId(def_id), body_id)
+    }
+
+    pub fn misc_with_span_source(span_source: SpanSource, body_id: hir::HirId) -> ObligationCause<'tcx> {
+        ObligationCause::new(span_source, body_id, MiscObligation)
     }
 
     pub fn dummy_with_span(span: Span) -> ObligationCause<'tcx> {
-        ObligationCause::new(SpanSource::Span(span), hir::CRATE_HIR_ID, MiscObligation)
+        ObligationCause::misc_with_span_source(SpanSource::Span(span), hir::CRATE_HIR_ID)
     }
 
     pub fn dummy_with_def_id(def_id: DefId) -> ObligationCause<'tcx> {
-        ObligationCause::new(SpanSource::DefId(def_id), hir::CRATE_HIR_ID, MiscObligation)
+        ObligationCause::misc_with_span_source(SpanSource::DefId(def_id), hir::CRATE_HIR_ID)
     }
 
     #[inline(always)]
