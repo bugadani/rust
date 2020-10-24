@@ -406,10 +406,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let mut suggested_deref = false;
                 if let Ref(_, rty, _) = lhs_ty.kind() {
                     if {
-                        self.infcx.type_is_copy_modulo_regions(self.param_env, rty, lhs_expr.span)
-                            && self
-                                .lookup_op_method(rty, &[rhs_ty], Op::Binary(op, is_assign))
-                                .is_ok()
+                        self.infcx.type_is_copy_modulo_regions(
+                            self.param_env,
+                            rty,
+                            SpanSource::Span(lhs_expr.span),
+                        ) && self
+                            .lookup_op_method(rty, &[rhs_ty], Op::Binary(op, is_assign))
+                            .is_ok()
                     } {
                         if let Ok(lstring) = source_map.span_to_snippet(lhs_expr.span) {
                             let msg = &format!(

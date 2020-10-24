@@ -4,11 +4,11 @@ use rustc_infer::infer::at::ToTrace;
 use rustc_infer::infer::canonical::{Canonical, QueryResponse};
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
 use rustc_infer::traits::TraitEngineExt as _;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::subst::{GenericArg, Subst, UserSelfTy, UserSubsts};
 use rustc_middle::ty::{self, FnSig, Lift, PolyFnSig, Ty, TyCtxt, TypeFoldable, Variance};
 use rustc_middle::ty::{ParamEnv, ParamEnvAnd, Predicate, ToPredicate};
-use rustc_span::DUMMY_SP;
 use rustc_trait_selection::infer::InferCtxtBuilderExt;
 use rustc_trait_selection::infer::InferCtxtExt;
 use rustc_trait_selection::traits::query::normalize::AtExt;
@@ -67,7 +67,7 @@ impl AscribeUserTypeCx<'me, 'tcx> {
     {
         self.infcx
             .partially_normalize_associated_types_in(
-                DUMMY_SP,
+                SpanSource::DUMMY,
                 hir::CRATE_HIR_ID,
                 self.param_env,
                 &value,

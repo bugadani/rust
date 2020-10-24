@@ -84,9 +84,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn pointer_kind(
         &self,
         t: Ty<'tcx>,
-        span: Span,
+        span_source: SpanSource,
     ) -> Result<Option<PointerKind<'tcx>>, ErrorReported> {
-        debug!("pointer_kind({:?}, {:?})", t, span);
+        debug!("pointer_kind({:?}, {:?})", t, span_source.to_span(self.tcx));
 
         let t = self.resolve_vars_if_possible(&t);
 
@@ -94,7 +94,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             return Err(ErrorReported);
         }
 
-        if self.type_is_known_to_be_sized_modulo_regions(t, span) {
+        if self.type_is_known_to_be_sized_modulo_regions(t, span_source) {
             return Ok(Some(PointerKind::Thin));
         }
 
@@ -104,13 +104,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             ty::Adt(def, substs) if def.is_struct() => match def.non_enum_variant().fields.last() {
                 None => Some(PointerKind::Thin),
                 Some(f) => {
-                    let field_ty = self.field_ty(span, f, substs);
-                    self.pointer_kind(field_ty, span)?
+                    let field_ty = self.field_ty(span_source, f, substs);
+                    self.pointer_kind(field_ty, span_source)?
                 }
             },
             ty::Tuple(fields) => match fields.last() {
                 None => Some(PointerKind::Thin),
-                Some(f) => self.pointer_kind(f.expect_ty(), span)?,
+                Some(f) => self.pointer_kind(f.expect_ty(), span_source)?,
             },
 
             // Pointers to foreign types are thin, despite being unsized
@@ -138,9 +138,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             | ty::Adt(..)
             | ty::Never
             | ty::Error(_) => {
-                self.tcx
-                    .sess
-                    .delay_span_bug(span, &format!("`{:?}` should be sized but is not?", t));
+                self.tcx.sess.delay_span_bug(
+                    span_source.to_span(self.tcx),
+                    &format!("`{:?}` should be sized but is not?", t),
+                );
                 return Err(ErrorReported);
             }
         })
@@ -558,7 +559,8 @@ impl<'a, 'tcx> CastCheck<'tcx> {
 
         debug!("check_cast({}, {:?} as {:?})", self.expr.hir_id, self.expr_ty, self.cast_ty);
 
-        if !fcx.type_is_known_to_be_sized_modulo_regions(self.cast_ty, self.span) {
+        if !fcx.type_is_known_to_be_sized_modulo_regions(self.cast_ty, SpanSource::Span(self.span))
+        {
             self.report_cast_to_unsized_type(fcx);
         } else if self.expr_ty.references_error() || self.cast_ty.references_error() {
             // No sense in giving duplicate error messages
@@ -586,7 +588,8 @@ impl<'a, 'tcx> CastCheck<'tcx> {
 
     fn report_object_unsafe_cast(&self, fcx: &FnCtxt<'a, 'tcx>, did: DefId) {
         let violations = fcx.tcx.object_safety_violations(did);
-        let mut err = report_object_safety_error(fcx.tcx, self.cast_span, did, violations);
+        let mut err =
+            report_object_safety_error(fcx.tcx, SpanSource::Span(self.cast_span), did, violations);
         err.note(&format!("required by cast to type '{}'", fcx.ty_to_string(self.cast_ty)));
         err.emit();
     }
@@ -607,7 +610,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
                     ty::FnDef(..) => {
                         // Attempt a coercion to a fn pointer type.
                         let f = fcx.normalize_associated_types_in(
-                            self.expr.span,
+                            SpanSource::Span(self.expr.span),
                             &self.expr_ty.fn_sig(fcx.tcx),
                         );
                         let res = fcx.try_coerce(
@@ -699,8 +702,8 @@ impl<'a, 'tcx> CastCheck<'tcx> {
         debug!("check_ptr_ptr_cast m_expr={:?} m_cast={:?}", m_expr, m_cast);
         // ptr-ptr cast. vtables must match.
 
-        let expr_kind = fcx.pointer_kind(m_expr.ty, self.span)?;
-        let cast_kind = fcx.pointer_kind(m_cast.ty, self.span)?;
+        let expr_kind = fcx.pointer_kind(m_expr.ty, SpanSource::Span(self.span))?;
+        let cast_kind = fcx.pointer_kind(m_cast.ty, SpanSource::Span(self.span))?;
 
         let cast_kind = match cast_kind {
             // We can't cast if target pointer kind is unknown
@@ -739,7 +742,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
     ) -> Result<CastKind, CastError> {
         // fptr-ptr cast. must be to thin ptr
 
-        match fcx.pointer_kind(m_cast.ty, self.span)? {
+        match fcx.pointer_kind(m_cast.ty, SpanSource::Span(self.span))? {
             None => Err(CastError::UnknownCastPtrKind),
             Some(PointerKind::Thin) => Ok(CastKind::FnPtrPtrCast),
             _ => Err(CastError::IllegalCast),
@@ -753,7 +756,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
     ) -> Result<CastKind, CastError> {
         // ptr-addr cast. must be from thin ptr
 
-        match fcx.pointer_kind(m_expr.ty, self.span)? {
+        match fcx.pointer_kind(m_expr.ty, SpanSource::Span(self.span))? {
             None => Err(CastError::UnknownExprPtrKind),
             Some(PointerKind::Thin) => Ok(CastKind::PtrAddrCast),
             _ => Err(CastError::NeedViaThinPtr),
@@ -803,7 +806,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
         m_cast: TypeAndMut<'tcx>,
     ) -> Result<CastKind, CastError> {
         // ptr-addr cast. pointer must be thin.
-        match fcx.pointer_kind(m_cast.ty, self.span)? {
+        match fcx.pointer_kind(m_cast.ty, SpanSource::Span(self.span))? {
             None => Err(CastError::UnknownCastPtrKind),
             Some(PointerKind::Thin) => Ok(CastKind::AddrPtrCast),
             _ => Err(CastError::IllegalCast),
@@ -838,8 +841,18 @@ impl<'a, 'tcx> CastCheck<'tcx> {
 }
 
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
-    fn type_is_known_to_be_sized_modulo_regions(&self, ty: Ty<'tcx>, span: Span) -> bool {
+    fn type_is_known_to_be_sized_modulo_regions(
+        &self,
+        ty: Ty<'tcx>,
+        span_source: SpanSource,
+    ) -> bool {
         let lang_item = self.tcx.require_lang_item(LangItem::Sized, None);
-        traits::type_known_to_meet_bound_modulo_regions(self, self.param_env, ty, lang_item, span)
+        traits::type_known_to_meet_bound_modulo_regions(
+            self,
+            self.param_env,
+            ty,
+            lang_item,
+            span_source,
+        )
     }
 }

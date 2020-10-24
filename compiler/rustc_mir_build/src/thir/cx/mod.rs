@@ -11,6 +11,7 @@ use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::Node;
 use rustc_index::vec::Idx;
 use rustc_infer::infer::InferCtxt;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::region;
 use rustc_middle::mir::interpret::{LitToConstError, LitToConstInput};
 use rustc_middle::ty::subst::Subst;
@@ -198,8 +199,8 @@ impl<'a, 'tcx> Cx<'a, 'tcx> {
         self.check_overflow
     }
 
-    crate fn type_is_copy_modulo_regions(&self, ty: Ty<'tcx>, span: Span) -> bool {
-        self.infcx.type_is_copy_modulo_regions(self.param_env, ty, span)
+    crate fn type_is_copy_modulo_regions(&self, ty: Ty<'tcx>, span_source: SpanSource) -> bool {
+        self.infcx.type_is_copy_modulo_regions(self.param_env, ty, span_source)
     }
 }
 

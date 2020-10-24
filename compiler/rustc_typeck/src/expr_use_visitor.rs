@@ -14,6 +14,7 @@ use rustc_hir::PatKind;
 use rustc_index::vec::Idx;
 use rustc_infer::infer::InferCtxt;
 use rustc_middle::hir::place::ProjectionKind;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, adjustment, TyCtxt};
 use rustc_target::abi::VariantIdx;
 
@@ -593,7 +594,7 @@ fn copy_or_move<'a, 'tcx>(
 ) -> ConsumeMode {
     if !mc.type_is_copy_modulo_regions(
         place_with_id.place.ty(),
-        mc.tcx().hir().span(place_with_id.hir_id),
+        SpanSource::Span(mc.tcx().hir().span(place_with_id.hir_id)), // FIXME: umm...?
     ) {
         Move
     } else {

@@ -4,6 +4,7 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_errors::{pluralize, struct_span_err, Applicability};
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty;
 use rustc_session::parse::feature_err;
 use rustc_span::symbol::{sym, Ident};
@@ -18,12 +19,13 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         &self,
         missing_type_params: Vec<String>,
         def_id: DefId,
-        span: Span,
+        span_source: SpanSource,
         empty_generic_args: bool,
     ) {
         if missing_type_params.is_empty() {
             return;
         }
+        let span = span_source.to_span(self.tcx());
         let display =
             missing_type_params.iter().map(|n| format!("`{}`", n)).collect::<Vec<_>>().join(", ");
         let mut err = struct_span_err!(
@@ -89,7 +91,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
     /// an error and attempt to build a reasonable structured suggestion.
     pub(crate) fn complain_about_internal_fn_trait(
         &self,
-        span: Span,
+        span_source: SpanSource,
         trait_def_id: DefId,
         trait_segment: &'a hir::PathSegment<'a>,
     ) {
@@ -141,6 +143,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
             } else {
                 ("parenthetical notation is only stable when used with `Fn`-family traits", None)
             };
+            let span = span_source.to_span(self.tcx());
             let mut err = feature_err(sess, sym::unboxed_closures, span, msg);
             if let Some(sugg) = sugg {
                 let msg = "use parenthetical notation instead";
@@ -155,13 +158,17 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         all_candidates: impl Fn() -> I,
         ty_param_name: &str,
         assoc_name: Ident,
-        span: Span,
+        span_source: SpanSource,
     ) where
         I: Iterator<Item = ty::PolyTraitRef<'tcx>>,
     {
         // The fallback span is needed because `assoc_name` might be an `Fn()`'s `Output` without a
         // valid span, so we point at the whole path segment instead.
-        let span = if assoc_name.span != DUMMY_SP { assoc_name.span } else { span };
+        let span = if assoc_name.span != DUMMY_SP {
+            assoc_name.span
+        } else {
+            span_source.to_span(self.tcx())
+        };
         let mut err = struct_span_err!(
             self.tcx().sess,
             span,

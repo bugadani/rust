@@ -452,8 +452,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         qpath: &QPath<'_>,
         hir_id: hir::HirId,
     ) -> Option<(&'tcx ty::VariantDef, Ty<'tcx>)> {
-        let path_span = qpath.qself_span();
-        let (def, ty) = self.finish_resolving_struct_path(qpath, path_span, hir_id);
+        let path_span_source = SpanSource::Span(qpath.qself_span());
+        let (def, ty) = self.finish_resolving_struct_path(qpath, path_span_source, hir_id);
         let variant = match def {
             Res::Err => {
                 self.set_tainted_by_errors();
@@ -478,9 +478,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             self.write_user_type_annotation_from_substs(hir_id, did, substs, None);
 
             // Check bounds on type arguments used in the path.
-            let (bounds, _) = self.instantiate_bounds(path_span, did, substs);
+            let (bounds, _) = self.instantiate_bounds(path_span_source, did, substs);
             let cause = traits::ObligationCause::new(
-                SpanSource::Span(path_span),
+                path_span_source,
                 self.body_id,
                 traits::ItemObligation(did),
             );
@@ -488,6 +488,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             Some((variant, ty))
         } else {
+            let path_span = path_span_source.to_span(self.tcx);
             struct_span_err!(
                 self.tcx.sess,
                 path_span,
@@ -512,7 +513,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // See #44848.
         let ref_bindings = local.pat.contains_explicit_ref_binding();
 
-        let local_ty = self.local_ty(init.span, local.hir_id).revealed_ty;
+        let local_ty = self.local_ty(SpanSource::Span(init.span), local.hir_id).revealed_ty;
         if let Some(m) = ref_bindings {
             // Somewhat subtle: if we have a `ref` binding in the pattern,
             // we want to avoid introducing coercions for the RHS. This is
@@ -533,7 +534,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Type check a `let` statement.
     pub fn check_decl_local(&self, local: &'tcx hir::Local<'tcx>) {
         // Determine and write the type which we'll check the pattern against.
-        let ty = self.local_ty(local.span, local.hir_id).decl_ty;
+        let ty = self.local_ty(SpanSource::Span(local.span), local.hir_id).decl_ty;
         self.write_ty(local.hir_id, ty);
 
         // Type check the initializer.
@@ -737,7 +738,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         &self,
         def_id: DefId,
         hir_id: hir::HirId,
-        span: Span,
+        span_source: SpanSource,
     ) {
         // We're only interested in functions tagged with
         // #[rustc_args_required_const], so ignore anything that's not.
@@ -756,7 +757,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         self.tcx.sess.span_err(
-            span,
+            span_source.to_span(self.tcx),
             "this function can only be invoked directly, not through a function pointer",
         );
     }
@@ -868,7 +869,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn finish_resolving_struct_path(
         &self,
         qpath: &QPath<'_>,
-        path_span: Span,
+        path_span_source: SpanSource,
         hir_id: hir::HirId,
     ) -> (Res, Ty<'tcx>) {
         match *qpath {
@@ -885,8 +886,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 } else {
                     Res::Err
                 };
-                let result =
-                    AstConv::associated_path_to_ty(self, hir_id, path_span, ty, res, segment, true);
+                let result = AstConv::associated_path_to_ty(
+                    self,
+                    hir_id,
+                    path_span_source,
+                    ty,
+                    res,
+                    segment,
+                    true,
+                );
                 let ty = result.map(|(ty, _, _)| ty).unwrap_or_else(|_| self.tcx().ty_error());
                 let result = result.map(|(_, kind, def_id)| (kind, def_id));
 
@@ -896,7 +904,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 (result.map(|(kind, def_id)| Res::Def(kind, def_id)).unwrap_or(Res::Err), ty)
             }
             QPath::LangItem(lang_item, span) => {
-                self.resolve_lang_item_path(lang_item, span, hir_id)
+                self.resolve_lang_item_path(lang_item, SpanSource::Span(span), hir_id)
             }
         }
     }

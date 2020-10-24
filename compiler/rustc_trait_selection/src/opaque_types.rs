@@ -113,7 +113,7 @@ pub trait InferCtxtExt<'tcx> {
         body_id: hir::HirId,
         param_env: ty::ParamEnv<'tcx>,
         value: &T,
-        value_span: Span,
+        value_span_source: SpanSource,
     ) -> InferOk<'tcx, (T, OpaqueTypeMap<'tcx>)>;
 
     fn constrain_opaque_types<FRR: FreeRegionRelations<'tcx>>(
@@ -189,19 +189,23 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         body_id: hir::HirId,
         param_env: ty::ParamEnv<'tcx>,
         value: &T,
-        value_span: Span,
+        value_span_source: SpanSource,
     ) -> InferOk<'tcx, (T, OpaqueTypeMap<'tcx>)> {
         debug!(
             "instantiate_opaque_types(value={:?}, parent_def_id={:?}, body_id={:?}, \
              param_env={:?}, value_span={:?})",
-            value, parent_def_id, body_id, param_env, value_span,
+            value,
+            parent_def_id,
+            body_id,
+            param_env,
+            value_span_source.to_span(self.tcx),
         );
         let mut instantiator = Instantiator {
             infcx: self,
             parent_def_id,
             body_id,
             param_env,
-            value_span,
+            value_span_source,
             opaque_types: Default::default(),
             obligations: vec![],
         };
@@ -999,7 +1003,7 @@ struct Instantiator<'a, 'tcx> {
     parent_def_id: LocalDefId,
     body_id: hir::HirId,
     param_env: ty::ParamEnv<'tcx>,
-    value_span: Span,
+    value_span_source: SpanSource,
     opaque_types: OpaqueTypeMap<'tcx>,
     obligations: Vec<PredicateObligation<'tcx>>,
 }
@@ -1117,11 +1121,15 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
             debug!("instantiate_opaque_types: returning concrete ty {:?}", opaque_defn.concrete_ty);
             return opaque_defn.concrete_ty;
         }
-        let span = tcx.def_span(def_id);
-        debug!("fold_opaque_ty {:?} {:?}", self.value_span, span);
+        let span_source = SpanSource::DefId(def_id);
+        debug!(
+            "fold_opaque_ty {:?} {:?}",
+            self.value_span_source.to_span(tcx),
+            span_source.to_span(tcx)
+        );
         let ty_var = infcx.next_ty_var(TypeVariableOrigin {
             kind: TypeVariableOriginKind::TypeInference,
-            span_source: SpanSource::DefId(def_id),
+            span_source,
         });
 
         let item_bounds = tcx.explicit_item_bounds(def_id);
@@ -1130,8 +1138,12 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
             item_bounds.iter().map(|(bound, _)| bound.subst(tcx, substs)).collect();
 
         let param_env = tcx.param_env(def_id);
-        let InferOk { value: bounds, obligations } =
-            infcx.partially_normalize_associated_types_in(span, self.body_id, param_env, &bounds);
+        let InferOk { value: bounds, obligations } = infcx.partially_normalize_associated_types_in(
+            span_source,
+            self.body_id,
+            param_env,
+            &bounds,
+        );
         self.obligations.extend(obligations);
 
         debug!("instantiate_opaque_types: bounds={:?}", bounds);
@@ -1150,7 +1162,7 @@ impl<'a, 'tcx> Instantiator<'a, 'tcx> {
         // value being folded. In simple cases like `-> impl Foo`,
         // these are the same span, but not in cases like `-> (impl
         // Foo, impl Bar)`.
-        let definition_span = self.value_span;
+        let definition_span = self.value_span_source.to_span(tcx); // FIXME
 
         self.opaque_types.insert(
             def_id,

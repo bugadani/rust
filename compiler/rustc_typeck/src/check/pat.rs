@@ -14,7 +14,7 @@ use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::subst::GenericArg;
 use rustc_middle::ty::{self, Adt, BindingMode, Ty, TypeFoldable};
 use rustc_span::hygiene::DesugaringKind;
-use rustc_span::source_map::{Span, Spanned};
+use rustc_span::source_map::Spanned;
 use rustc_span::symbol::Ident;
 use rustc_trait_selection::traits::{ObligationCause, Pattern};
 
@@ -582,7 +582,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         debug!("check_pat_ident: pat.hir_id={:?} bm={:?}", pat.hir_id, bm);
 
-        let local_ty = self.local_ty(pat.span, pat.hir_id).decl_ty;
+        let pat_span_source = SpanSource::Span(pat.span);
+        let local_ty = self.local_ty(pat_span_source, pat.hir_id).decl_ty;
         let eq_ty = match bm {
             ty::BindByReference(mutbl) => {
                 // If the binding is like `ref x | ref mut x`,
@@ -592,7 +593,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // `x` is assigned a value of type `&M T`, hence `&M T <: typeof(x)`
                 // is required. However, we use equality, which is stronger.
                 // See (note_1) for an explanation.
-                self.new_ref_ty(SpanSource::Span(pat.span), mutbl, expected)
+                self.new_ref_ty(pat_span_source, mutbl, expected)
             }
             // Otherwise, the type of x is the expected type `T`.
             ty::BindByValue(_) => {
@@ -600,12 +601,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 expected
             }
         };
-        self.demand_eqtype_pat(SpanSource::Span(pat.span), eq_ty, local_ty, ti);
+        self.demand_eqtype_pat(pat_span_source, eq_ty, local_ty, ti);
 
         // If there are multiple arms, make sure they all agree on
         // what the type of the binding `x` ought to be.
         if var_id != pat.hir_id {
-            self.check_binding_alt_eq_ty(pat.span, var_id, local_ty, ti);
+            self.check_binding_alt_eq_ty(pat_span_source, var_id, local_ty, ti);
         }
 
         if let Some(p) = sub {
@@ -615,9 +616,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         local_ty
     }
 
-    fn check_binding_alt_eq_ty(&self, span: Span, var_id: HirId, ty: Ty<'tcx>, ti: TopInfo<'tcx>) {
-        let var_ty = self.local_ty(span, var_id).decl_ty;
-        if let Some(mut err) = self.demand_eqtype_pat_diag(SpanSource::Span(span), var_ty, ty, ti) {
+    fn check_binding_alt_eq_ty(
+        &self,
+        span_source: SpanSource,
+        var_id: HirId,
+        ty: Ty<'tcx>,
+        ti: TopInfo<'tcx>,
+    ) {
+        let var_ty = self.local_ty(span_source, var_id).decl_ty;
+        if let Some(mut err) = self.demand_eqtype_pat_diag(span_source, var_ty, ty, ti) {
             let hir = self.tcx.hir();
             let var_ty = self.resolve_vars_with_obligations(var_ty);
             let msg = format!("first introduced with type `{}` here", var_ty);
@@ -774,8 +781,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         // Type-check the path.
-        let (pat_ty, pat_res) =
-            self.instantiate_value_path(segments, opt_ty, res, pat.span, pat.hir_id);
+        let (pat_ty, pat_res) = self.instantiate_value_path(
+            segments,
+            opt_ty,
+            res,
+            SpanSource::Span(pat.span),
+            pat.hir_id,
+        );
         if let Some(err) = self.demand_suptype_with_origin(
             &self.pattern_cause(ti, SpanSource::Span(pat.span)),
             expected,
@@ -911,6 +923,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         ti: TopInfo<'tcx>,
     ) -> Ty<'tcx> {
         let tcx = self.tcx;
+        let pat_span_source = SpanSource::Span(pat.span);
         let on_error = || {
             let parent_pat = Some(pat);
             for pat in subpats {
@@ -947,7 +960,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Resolve the path and check the definition for errors.
         let (res, opt_ty, segments) =
-            self.resolve_ty_and_res_ufcs(qpath, pat.hir_id, SpanSource::Span(pat.span));
+            self.resolve_ty_and_res_ufcs(qpath, pat.hir_id, pat_span_source);
         if res == Res::Err {
             self.set_tainted_by_errors();
             on_error();
@@ -956,7 +969,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Type-check the path.
         let (pat_ty, res) =
-            self.instantiate_value_path(segments, opt_ty, res, pat.span, pat.hir_id);
+            self.instantiate_value_path(segments, opt_ty, res, pat_span_source, pat.hir_id);
         if !pat_ty.is_fn() {
             report_unexpected_res(res);
             return tcx.ty_error();
@@ -981,7 +994,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let pat_ty = pat_ty.no_bound_vars().expect("expected fn type");
 
         // Type-check the tuple struct pattern against the expected type.
-        let diag = self.demand_eqtype_pat_diag(SpanSource::Span(pat.span), expected, pat_ty, ti);
+        let diag = self.demand_eqtype_pat_diag(pat_span_source, expected, pat_ty, ti);
         let had_err = if let Some(mut err) = diag {
             err.emit();
             true
@@ -998,22 +1011,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 _ => bug!("unexpected pattern type {:?}", pat_ty),
             };
             for (i, subpat) in subpats.iter().enumerate_and_adjust(variant.fields.len(), ddpos) {
-                let field_ty = self.field_ty(subpat.span, &variant.fields[i], substs);
+                let field_ty =
+                    self.field_ty(SpanSource::Span(subpat.span), &variant.fields[i], substs);
                 self.check_pat(&subpat, field_ty, def_bm, TopInfo { parent_pat: Some(&pat), ..ti });
 
                 self.tcx.check_stability(variant.fields[i].did, Some(pat.hir_id), subpat.span);
             }
         } else {
             // Pattern has wrong number of fields.
-            self.e0023(
-                SpanSource::Span(pat.span),
-                res,
-                qpath,
-                subpats,
-                &variant.fields,
-                expected,
-                had_err,
-            );
+            self.e0023(pat_span_source, res, qpath, subpats, &variant.fields, expected, had_err);
             on_error();
             return tcx.ty_error();
         }
@@ -1060,7 +1066,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // the tuple struct pattern. Otherwise the substs could get out of range on e.g.,
             // `let P() = U;` where `P != U` with `struct P<T>(T);`.
             (ty::Adt(_, substs), [field], false) => {
-                let field_ty = self.field_ty(pat_span, field, substs);
+                let field_ty = self.field_ty(pat_span_source, field, substs);
                 match field_ty.kind() {
                     ty::Tuple(_) => field_ty.tuple_fields().count() == subpats.len(),
                     _ => false,
@@ -1178,26 +1184,26 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let mut inexistent_fields = vec![];
         // Typecheck each field.
         for field in fields {
-            let span = field.span;
+            let span_source = SpanSource::Span(field.span);
             let ident = tcx.adjust_ident(field.ident, variant.def_id);
             let field_ty = match used_fields.entry(ident) {
                 Occupied(occupied) => {
-                    self.error_field_already_bound(
-                        SpanSource::Span(span),
-                        field.ident,
-                        *occupied.get(),
-                    );
+                    self.error_field_already_bound(span_source, field.ident, *occupied.get());
                     no_field_errors = false;
                     tcx.ty_error()
                 }
                 Vacant(vacant) => {
-                    vacant.insert(SpanSource::Span(span));
+                    vacant.insert(span_source);
                     field_map
                         .get(&ident)
                         .map(|(i, f)| {
                             self.write_field_index(field.hir_id, *i);
-                            self.tcx.check_stability(f.did, Some(pat.hir_id), span);
-                            self.field_ty(span, f, substs)
+                            self.tcx.check_stability(
+                                f.did,
+                                Some(pat.hir_id),
+                                span_source.to_span(self.tcx),
+                            ); // FIXME
+                            self.field_ty(span_source, f, substs)
                         })
                         .unwrap_or_else(|| {
                             inexistent_fields.push(field.ident);

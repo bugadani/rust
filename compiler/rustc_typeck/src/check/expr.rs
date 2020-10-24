@@ -459,7 +459,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         lang_item: hir::LangItem,
         expr: &'tcx hir::Expr<'tcx>,
     ) -> Ty<'tcx> {
-        self.resolve_lang_item_path(lang_item, expr.span, expr.hir_id).1
+        self.resolve_lang_item_path(lang_item, SpanSource::Span(expr.span), expr.hir_id).1
     }
 
     fn check_expr_path(&self, qpath: &hir::QPath<'_>, expr: &'tcx hir::Expr<'tcx>) -> Ty<'tcx> {
@@ -475,7 +475,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 report_unexpected_variant_res(tcx, res, expr.span);
                 tcx.ty_error()
             }
-            _ => self.instantiate_value_path(segs, opt_ty, res, expr.span, expr.hir_id).0,
+            _ => {
+                self.instantiate_value_path(
+                    segs,
+                    opt_ty,
+                    res,
+                    SpanSource::Span(expr.span),
+                    expr.hir_id,
+                )
+                .0
+            }
         };
 
         if let ty::FnDef(..) = ty.kind() {
@@ -1159,7 +1168,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             .iter()
                             .map(|f| {
                                 self.normalize_associated_types_in(
-                                    expr.span,
+                                    SpanSource::Span(expr.span),
                                     &f.ty(self.tcx, substs),
                                 )
                             })
@@ -1232,7 +1241,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     tcx.check_stability(v_field.did, Some(expr_id), field.span);
                 }
 
-                self.field_ty(field.span, v_field, substs)
+                self.field_ty(SpanSource::Span(field.span), v_field, substs)
             } else {
                 error_happened = true;
                 if let Some(prev_span) = seen_fields.get(&ident) {
@@ -1535,7 +1544,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         fields.iter().position(|f| f.ident.normalize_to_macros_2_0() == ident)
                     {
                         let field = &fields[index];
-                        let field_ty = self.field_ty(expr.span, field, substs);
+                        let field_ty = self.field_ty(SpanSource::Span(expr.span), field, substs);
                         // Save the index of all fields regardless of their visibility in case
                         // of error recovery.
                         self.write_field_index(expr.hir_id, index);

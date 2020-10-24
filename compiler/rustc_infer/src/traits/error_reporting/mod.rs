@@ -5,6 +5,7 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::{struct_span_err, DiagnosticBuilder};
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::symbol::Symbol;
 use rustc_span::{MultiSpan, Span};
@@ -37,7 +38,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
 pub fn report_object_safety_error(
     tcx: TyCtxt<'tcx>,
-    span: Span,
+    span_source: SpanSource,
     trait_def_id: DefId,
     violations: &[ObjectSafetyViolation],
 ) -> DiagnosticBuilder<'tcx> {
@@ -46,6 +47,7 @@ pub fn report_object_safety_error(
         hir::Node::Item(item) => Some(item.ident.span),
         _ => None,
     });
+    let span = span_source.to_span(tcx);
     let span = tcx.sess.source_map().guess_head_span(span);
     let mut err = struct_span_err!(
         tcx.sess,

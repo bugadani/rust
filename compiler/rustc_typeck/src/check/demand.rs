@@ -644,7 +644,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 if let Some(steps) = self.deref_steps(checked_ty, expected) {
                     if steps == 1 {
                         // For a suggestion to make sense, the type would need to be `Copy`.
-                        if self.infcx.type_is_copy_modulo_regions(self.param_env, expected, sp) {
+                        if self.infcx.type_is_copy_modulo_regions(
+                            self.param_env,
+                            expected,
+                            SpanSource::Span(sp),
+                        ) {
                             if let Ok(code) = sm.span_to_snippet(sp) {
                                 let message = if checked_ty.is_region_ptr() {
                                     "consider dereferencing the borrow"

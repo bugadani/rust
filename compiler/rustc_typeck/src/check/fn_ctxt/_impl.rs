@@ -124,9 +124,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         format!("{:p}", self)
     }
 
-    pub fn local_ty(&self, span: Span, nid: hir::HirId) -> LocalTy<'tcx> {
+    pub fn local_ty(&self, span_source: SpanSource, nid: hir::HirId) -> LocalTy<'tcx> {
         self.locals.borrow().get(&nid).cloned().unwrap_or_else(|| {
-            span_bug!(span, "no type for local variable {}", self.tcx.hir().node_to_string(nid))
+            span_bug!(
+                span_source.to_span(self.tcx),
+                "no type for local variable {}",
+                self.tcx.hir().node_to_string(nid)
+            )
         })
     }
 
@@ -324,12 +328,17 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Basically whenever we are converting from a type scheme into
     /// the fn body space, we always want to normalize associated
     /// types as well. This function combines the two.
-    fn instantiate_type_scheme<T>(&self, span: Span, substs: SubstsRef<'tcx>, value: &T) -> T
+    fn instantiate_type_scheme<T>(
+        &self,
+        span_source: SpanSource,
+        substs: SubstsRef<'tcx>,
+        value: &T,
+    ) -> T
     where
         T: TypeFoldable<'tcx>,
     {
         let value = value.subst(self.tcx, substs);
-        let result = self.normalize_associated_types_in(span, &value);
+        let result = self.normalize_associated_types_in(span_source, &value);
         debug!("instantiate_type_scheme(value={:?}, substs={:?}) = {:?}", value, substs, result);
         result
     }
@@ -338,14 +347,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// generic type scheme.
     pub(in super::super) fn instantiate_bounds(
         &self,
-        span: Span,
+        span_source: SpanSource,
         def_id: DefId,
         substs: SubstsRef<'tcx>,
     ) -> (ty::InstantiatedPredicates<'tcx>, Vec<Span>) {
         let bounds = self.tcx.predicates_of(def_id);
         let spans: Vec<Span> = bounds.predicates.iter().map(|(_, span)| *span).collect();
         let result = bounds.instantiate(self.tcx, substs);
-        let result = self.normalize_associated_types_in(span, &result);
+        let result = self.normalize_associated_types_in(span_source, &result);
         debug!(
             "instantiate_bounds(bounds={:?}, substs={:?}) = {:?}, {:?}",
             bounds, substs, result, spans,
@@ -360,7 +369,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         &self,
         parent_id: hir::HirId,
         value: &T,
-        value_span: Span,
+        value_span_source: SpanSource,
     ) -> T {
         let parent_def_id = self.tcx.hir().local_def_id(parent_id);
         debug!(
@@ -374,7 +383,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 self.body_id,
                 self.param_env,
                 value,
-                value_span,
+                value_span_source,
             ));
 
         let mut opaque_types = self.opaque_types.borrow_mut();
@@ -387,22 +396,31 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         value
     }
 
-    pub(in super::super) fn normalize_associated_types_in<T>(&self, span: Span, value: &T) -> T
+    pub(in super::super) fn normalize_associated_types_in<T>(
+        &self,
+        span_source: SpanSource,
+        value: &T,
+    ) -> T
     where
         T: TypeFoldable<'tcx>,
     {
-        self.inh.normalize_associated_types_in(span, self.body_id, self.param_env, value)
+        self.inh.normalize_associated_types_in(span_source, self.body_id, self.param_env, value)
     }
 
     pub(in super::super) fn normalize_associated_types_in_as_infer_ok<T>(
         &self,
-        span: Span,
+        span_source: SpanSource,
         value: &T,
     ) -> InferOk<'tcx, T>
     where
         T: TypeFoldable<'tcx>,
     {
-        self.inh.partially_normalize_associated_types_in(span, self.body_id, self.param_env, value)
+        self.inh.partially_normalize_associated_types_in(
+            span_source,
+            self.body_id,
+            self.param_env,
+            value,
+        )
     }
 
     pub fn require_type_meets(
@@ -598,11 +616,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     // Indifferent to privacy flags
     pub fn field_ty(
         &self,
-        span: Span,
+        span_source: SpanSource,
         field: &'tcx ty::FieldDef,
         substs: SubstsRef<'tcx>,
     ) -> Ty<'tcx> {
-        self.normalize_associated_types_in(span, &field.ty(self.tcx, substs))
+        self.normalize_associated_types_in(span_source, &field.ty(self.tcx, substs))
     }
 
     pub(in super::super) fn resolve_generator_interiors(&self, def_id: DefId) {
@@ -866,10 +884,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub(in super::super) fn resolve_lang_item_path(
         &self,
         lang_item: hir::LangItem,
-        span: Span,
+        span_source: SpanSource,
         hir_id: hir::HirId,
     ) -> (Res, Ty<'tcx>) {
-        let def_id = self.tcx.require_lang_item(lang_item, Some(SpanSource::Span(span)));
+        let def_id = self.tcx.require_lang_item(lang_item, Some(span_source));
         let def_kind = self.tcx.def_kind(def_id);
 
         let item_ty = if let DefKind::Variant = def_kind {
@@ -877,11 +895,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         } else {
             self.tcx.type_of(def_id)
         };
-        let substs = self.infcx.fresh_substs_for_item(SpanSource::Span(span), def_id);
+        let substs = self.infcx.fresh_substs_for_item(span_source, def_id);
         let ty = item_ty.subst(self.tcx, substs);
 
         self.write_resolution(hir_id, Ok((def_kind, def_id)));
-        self.add_required_obligations(span, def_id, &substs);
+        self.add_required_obligations(span_source, def_id, &substs);
         (Res::Def(def_kind, def_id), ty)
     }
 
@@ -1096,7 +1114,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         segments: &[hir::PathSegment<'_>],
         self_ty: Option<Ty<'tcx>>,
         res: Res,
-        span: Span,
+        span_source: SpanSource,
         hir_id: hir::HirId,
     ) -> (Ty<'tcx>, Res) {
         debug!(
@@ -1128,12 +1146,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let container = tcx.associated_item(def_id).container;
                 debug!("instantiate_value_path: def_id={:?} container={:?}", def_id, container);
                 match container {
-                    ty::TraitContainer(trait_did) => callee::check_legal_trait_for_method_call(
-                        tcx,
-                        SpanSource::Span(span),
-                        None,
-                        trait_did,
-                    ),
+                    ty::TraitContainer(trait_did) => {
+                        callee::check_legal_trait_for_method_call(tcx, span_source, None, trait_did)
+                    }
                     ty::ImplContainer(impl_def_id) => {
                         if segments.len() == 1 {
                             // `<T>::assoc` will end up here, and so
@@ -1168,8 +1183,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         );
 
         if let Res::Local(hid) = res {
-            let ty = self.local_ty(span, hid).decl_ty;
-            let ty = self.normalize_associated_types_in(span, &ty);
+            let ty = self.local_ty(span_source, hid).decl_ty;
+            let ty = self.normalize_associated_types_in(span_source, &ty);
             self.write_ty(hir_id, ty);
             return (ty, res);
         }
@@ -1199,7 +1214,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 ..
             } = AstConv::check_generic_arg_count_for_call(
                 tcx,
-                SpanSource::Span(span),
+                span_source,
                 &generics,
                 &seg,
                 false, // `is_method_call`
@@ -1215,7 +1230,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             .unwrap_or(false);
 
         let (res, self_ctor_substs) = if let Res::SelfCtor(impl_def_id) = res {
-            let ty = self.normalize_ty(span, tcx.at(span).type_of(impl_def_id));
+            let span = span_source.to_span(tcx);
+            let ty = self.normalize_ty(span_source, tcx.at(span).type_of(impl_def_id));
             match *ty.kind() {
                 ty::Adt(adt_def, substs) if adt_def.has_ctor() => {
                     let variant = adt_def.non_enum_variant();
@@ -1311,7 +1327,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 |substs, param, infer_args| {
                     match param.kind {
                         GenericParamDefKind::Lifetime => {
-                            self.re_infer(Some(param), span).unwrap().into()
+                            self.re_infer(Some(param), span_source).unwrap().into()
                         }
                         GenericParamDefKind::Type { has_default, .. } => {
                             if !infer_args && has_default {
@@ -1320,8 +1336,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 // is missing.
                                 let default = tcx.type_of(param.def_id);
                                 self.normalize_ty(
-                                    span,
-                                    default.subst_spanned(tcx, substs.unwrap(), Some(span)),
+                                    span_source,
+                                    default.subst_spanned(
+                                        tcx,
+                                        substs.unwrap(),
+                                        Some(span_source.to_span(tcx)),
+                                    ), // FIXME
                                 )
                                 .into()
                             } else {
@@ -1329,13 +1349,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 // This case also occurs as a result of some malformed input, e.g.
                                 // a lifetime argument being given instead of a type parameter.
                                 // Using inference instead of `Error` gives better error messages.
-                                self.var_for_def(SpanSource::Span(span), param)
+                                self.var_for_def(span_source, param)
                             }
                         }
                         GenericParamDefKind::Const => {
                             // FIXME(const_generics:defaults)
                             // No const parameters were provided, we have to infer them.
-                            self.var_for_def(SpanSource::Span(span), param)
+                            self.var_for_def(span_source, param)
                         }
                     }
                 },
@@ -1347,11 +1367,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // First, store the "user substs" for later.
         self.write_user_type_annotation_from_substs(hir_id, def_id, substs, user_self_ty);
 
-        self.add_required_obligations(span, def_id, &substs);
+        self.add_required_obligations(span_source, def_id, &substs);
 
         // Substitute the values for the type parameters into the type of
         // the referenced item.
-        let ty_substituted = self.instantiate_type_scheme(span, &substs, &ty);
+        let ty_substituted = self.instantiate_type_scheme(span_source, &substs, &ty);
 
         if let Some(UserSelfTy { impl_def_id, self_ty }) = user_self_ty {
             // In the case of `Foo<T>::method` and `<Foo<T>>::method`, if `method`
@@ -1361,13 +1381,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // This also occurs for an enum variant on a type alias.
             let ty = tcx.type_of(impl_def_id);
 
-            let impl_ty = self.instantiate_type_scheme(span, &substs, &ty);
-            match self.at(&self.misc(SpanSource::Span(span)), self.param_env).sup(impl_ty, self_ty)
-            {
+            let impl_ty = self.instantiate_type_scheme(span_source, &substs, &ty);
+            match self.at(&self.misc(span_source), self.param_env).sup(impl_ty, self_ty) {
                 Ok(ok) => self.register_infer_ok_obligations(ok),
                 Err(_) => {
                     self.tcx.sess.delay_span_bug(
-                        span,
+                        span_source.to_span(self.tcx),
                         &format!(
                         "instantiate_value_path: (UFCS) {:?} was a subtype of {:?} but now is not?",
                         self_ty,
@@ -1378,7 +1397,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         }
 
-        self.check_rustc_args_require_const(def_id, hir_id, span);
+        self.check_rustc_args_require_const(def_id, hir_id, span_source);
 
         debug!("instantiate_value_path: type of {:?} is {:?}", hir_id, ty_substituted);
         self.write_substs(hir_id, substs);
@@ -1387,15 +1406,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     }
 
     /// Add all the obligations that are required, substituting and normalized appropriately.
-    fn add_required_obligations(&self, span: Span, def_id: DefId, substs: &SubstsRef<'tcx>) {
-        let (bounds, spans) = self.instantiate_bounds(span, def_id, &substs);
+    fn add_required_obligations(
+        &self,
+        span_source: SpanSource,
+        def_id: DefId,
+        substs: &SubstsRef<'tcx>,
+    ) {
+        let (bounds, spans) = self.instantiate_bounds(span_source, def_id, &substs);
 
         for (i, mut obligation) in traits::predicates_for_generics(
-            traits::ObligationCause::new(
-                SpanSource::Span(span),
-                self.body_id,
-                traits::ItemObligation(def_id),
-            ),
+            traits::ObligationCause::new(span_source, self.body_id, traits::ItemObligation(def_id)),
             self.param_env,
             bounds,
         )

@@ -35,6 +35,7 @@ use rustc_hir::{GenericParamKind, HirId, Node};
 use rustc_middle::hir::map::blocks::FnLikeNode;
 use rustc_middle::hir::map::Map;
 use rustc_middle::middle::codegen_fn_attrs::{CodegenFnAttrFlags, CodegenFnAttrs};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::mono::Linkage;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::subst::InternalSubsts;
@@ -46,7 +47,7 @@ use rustc_session::config::SanitizerSet;
 use rustc_session::lint;
 use rustc_session::parse::feature_err;
 use rustc_span::symbol::{kw, sym, Ident, Symbol};
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::Span;
 use rustc_target::spec::abi;
 use rustc_trait_selection::traits::error_reporting::suggestions::NextTypeParamName;
 
@@ -308,11 +309,17 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
         }
     }
 
-    fn get_type_parameter_bounds(&self, span: Span, def_id: DefId) -> ty::GenericPredicates<'tcx> {
-        self.tcx.at(span).type_param_predicates((self.item_def_id, def_id.expect_local()))
+    fn get_type_parameter_bounds(
+        &self,
+        span_source: SpanSource,
+        def_id: DefId,
+    ) -> ty::GenericPredicates<'tcx> {
+        self.tcx
+            .at(span_source.to_span(self.tcx))
+            .type_param_predicates((self.item_def_id, def_id.expect_local()))
     }
 
-    fn re_infer(&self, _: Option<&ty::GenericParamDef>, _: Span) -> Option<ty::Region<'tcx>> {
+    fn re_infer(&self, _: Option<&ty::GenericParamDef>, _: SpanSource) -> Option<ty::Region<'tcx>> {
         None
     }
 
@@ -320,23 +327,23 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
         false
     }
 
-    fn ty_infer(&self, _: Option<&ty::GenericParamDef>, span: Span) -> Ty<'tcx> {
-        self.tcx().ty_error_with_message(span, "bad_placeholder_type")
+    fn ty_infer(&self, _: Option<&ty::GenericParamDef>, span_source: SpanSource) -> Ty<'tcx> {
+        self.tcx.ty_error_with_message(span_source.to_span(self.tcx), "bad_placeholder_type")
     }
 
     fn ct_infer(
         &self,
         ty: Ty<'tcx>,
         _: Option<&ty::GenericParamDef>,
-        span: Span,
+        span_source: SpanSource,
     ) -> &'tcx Const<'tcx> {
-        bad_placeholder_type(self.tcx(), vec![span]).emit();
+        bad_placeholder_type(self.tcx, vec![span_source.to_span(self.tcx)]).emit();
         self.tcx().const_error(ty)
     }
 
     fn projected_ty_from_poly_trait_ref(
         &self,
-        span: Span,
+        span_source: SpanSource,
         item_def_id: DefId,
         item_segment: &hir::PathSegment<'_>,
         poly_trait_ref: ty::PolyTraitRef<'tcx>,
@@ -345,7 +352,7 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
             let item_substs = <dyn AstConv<'tcx>>::create_substs_for_associated_item(
                 self,
                 self.tcx,
-                span,
+                span_source,
                 item_def_id,
                 item_segment,
                 trait_ref.substs,
@@ -354,8 +361,8 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
         } else {
             // There are no late-bound regions; we can just ignore the binder.
             let mut err = struct_span_err!(
-                self.tcx().sess,
-                span,
+                self.tcx.sess,
+                span_source.to_span(self.tcx()),
                 E0212,
                 "cannot extract an associated type from a higher-ranked trait bound \
                  in this context"
@@ -379,7 +386,7 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
                             let suggestions = vec![
                                 (lt_sp, sugg),
                                 (
-                                    span,
+                                    span_source.to_span(self.tcx()),
                                     format!(
                                         "{}::{}",
                                         // Replace the existing lifetimes with a new named lifetime.
@@ -417,7 +424,7 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
                 | hir::Node::TraitItem(_)
                 | hir::Node::ImplItem(_) => {
                     err.span_suggestion(
-                        span,
+                        span_source.to_span(self.tcx()),
                         "use a fully qualified path with inferred lifetimes",
                         format!(
                             "{}::{}",
@@ -435,7 +442,7 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
         }
     }
 
-    fn normalize_ty(&self, _span: Span, ty: Ty<'tcx>) -> Ty<'tcx> {
+    fn normalize_ty(&self, _span_source: SpanSource, ty: Ty<'tcx>) -> Ty<'tcx> {
         // Types in item signatures are not normalized to avoid undue dependencies.
         ty
     }
@@ -444,7 +451,7 @@ impl AstConv<'tcx> for ItemCtxt<'tcx> {
         // There's no obvious place to track this, so just let it go.
     }
 
-    fn record_ty(&self, _hir_id: hir::HirId, _ty: Ty<'tcx>, _span: Span) {
+    fn record_ty(&self, _hir_id: hir::HirId, _ty: Ty<'tcx>, _span: SpanSource) {
         // There's no place to record types from signatures?
     }
 }
@@ -515,7 +522,7 @@ fn type_param_predicates(
     let mut result = parent
         .map(|parent| {
             let icx = ItemCtxt::new(tcx, parent);
-            icx.get_type_parameter_bounds(DUMMY_SP, def_id.to_def_id())
+            icx.get_type_parameter_bounds(SpanSource::DUMMY, def_id.to_def_id())
         })
         .unwrap_or_default();
     let mut extend = None;
@@ -1950,7 +1957,7 @@ fn gather_explicit_predicates_of(tcx: TyCtxt<'_>, def_id: DefId) -> ty::GenericP
                             AstConv::instantiate_lang_item_trait_ref(
                                 &icx,
                                 lang_item,
-                                span,
+                                SpanSource::Span(span),
                                 hir_id,
                                 args,
                                 ty,
@@ -2225,7 +2232,7 @@ fn predicates_from_bound<'tcx>(
             let mut bounds = Bounds::default();
             astconv.instantiate_lang_item_trait_ref(
                 lang_item,
-                span,
+                SpanSource::Span(span),
                 hir_id,
                 args,
                 param_ty,

@@ -127,11 +127,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     /// Region checking during the WF phase for items. `wf_tys` are the
     /// types from which we should derive implied bounds, if any.
-    pub fn regionck_item(&self, item_id: hir::HirId, span: Span, wf_tys: &[Ty<'tcx>]) {
+    pub fn regionck_item(&self, item_id: hir::HirId, span_source: SpanSource, wf_tys: &[Ty<'tcx>]) {
         debug!("regionck_item(item.id={:?}, wf_tys={:?})", item_id, wf_tys);
         let subject = self.tcx.hir().local_def_id(item_id);
         let mut rcx = RegionCtxt::new(self, item_id, Subject(subject), self.param_env);
-        rcx.outlives_environment.add_implied_bounds(self, wf_tys, item_id, span);
+        rcx.outlives_environment.add_implied_bounds(self, wf_tys, item_id, span_source);
         rcx.outlives_environment.save_implied_bounds(item_id);
         rcx.visit_region_obligations(item_id);
         rcx.resolve_regions_and_report_errors(RegionckMode::default());
@@ -153,7 +153,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         if !self.errors_reported_since_creation() {
             // regionck assumes typeck succeeded
-            rcx.visit_fn_body(fn_id, body, self.tcx.hir().span(fn_id));
+            rcx.visit_fn_body(fn_id, body, SpanSource::Span(self.tcx.hir().span(fn_id))); // FIXME pass def id
         }
 
         rcx.resolve_regions_and_report_errors(RegionckMode::for_item_body(self.tcx));
@@ -255,7 +255,7 @@ impl<'a, 'tcx> RegionCtxt<'a, 'tcx> {
         &mut self,
         id: hir::HirId, // the id of the fn itself
         body: &'tcx hir::Body<'tcx>,
-        span: Span,
+        span_source: SpanSource,
     ) {
         // When we enter a function, we can derive
         debug!("visit_fn_body(id={:?})", id);
@@ -285,7 +285,7 @@ impl<'a, 'tcx> RegionCtxt<'a, 'tcx> {
             self.fcx,
             &fn_sig_tys[..],
             body_id.hir_id,
-            span,
+            span_source,
         );
         self.outlives_environment.save_implied_bounds(body_id.hir_id);
         self.link_fn_params(&body.params);
@@ -369,7 +369,7 @@ impl<'a, 'tcx> Visitor<'tcx> for RegionCtxt<'a, 'tcx> {
         let env_snapshot = self.outlives_environment.push_snapshot_pre_closure();
 
         let body = self.tcx.hir().body(body_id);
-        self.visit_fn_body(hir_id, body, span);
+        self.visit_fn_body(hir_id, body, SpanSource::Span(span));
 
         // Restore state from previous function.
         self.outlives_environment.pop_snapshot_post_closure(env_snapshot);

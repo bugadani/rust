@@ -63,6 +63,7 @@ use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_hir::lang_items::LangItem;
 use rustc_hir::{Item, ItemKind, Node};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::ParamEnvAnd;
 use rustc_middle::ty::{
@@ -1776,7 +1777,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         let mut diag = match failure_code {
             FailureCode::Error0038(did) => {
                 let violations = self.tcx.object_safety_violations(did);
-                report_object_safety_error(self.tcx, span, did, violations)
+                report_object_safety_error(self.tcx, SpanSource::Span(span), did, violations)
             }
             FailureCode::Error0317(failure_str) => {
                 struct_span_err!(self.tcx.sess, span, E0317, "{}", failure_str)

@@ -1243,7 +1243,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                             dummy_body_id,
                             param_env,
                             &anon_ty,
-                            locations.span(body),
+                            SpanSource::Span(locations.span(body)),
                         ));
                     debug!(
                         "eq_opaque_type_and_type: \
@@ -1989,7 +1989,11 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                         // a required check to make sure that repeated elements implement `Copy`.
                         let span = body.source_info(location).span;
                         let ty = operand.ty(body, tcx);
-                        if !self.infcx.type_is_copy_modulo_regions(self.param_env, ty, span) {
+                        if !self.infcx.type_is_copy_modulo_regions(
+                            self.param_env,
+                            ty,
+                            SpanSource::Span(span),
+                        ) {
                             let ccx = ConstCx::new_with_param_env(tcx, body, self.param_env);
                             // To determine if `const_in_array_repeat_expressions` feature gate should
                             // be mentioned, need to check if the rvalue is promotable.

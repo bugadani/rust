@@ -9,6 +9,7 @@ use rustc_hir as hir;
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_infer::infer::error_reporting::TypeAnnotationNeeded::E0282;
 use rustc_infer::infer::InferCtxt;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::{Adjust, Adjustment, PointerCast};
 use rustc_middle::ty::fold::{TypeFoldable, TypeFolder};
 use rustc_middle::ty::{self, Ty, TyCtxt};
@@ -312,7 +313,7 @@ impl<'cx, 'tcx> Visitor<'tcx> for WritebackCx<'cx, 'tcx> {
 
     fn visit_local(&mut self, l: &'tcx hir::Local<'tcx>) {
         intravisit::walk_local(self, l);
-        let var_ty = self.fcx.local_ty(l.span, l.hir_id).decl_ty;
+        let var_ty = self.fcx.local_ty(SpanSource::Span(l.span), l.hir_id).decl_ty;
         let var_ty = self.resolve(&var_ty, &l.span);
         self.write_ty_to_typeck_results(l.hir_id, var_ty);
     }

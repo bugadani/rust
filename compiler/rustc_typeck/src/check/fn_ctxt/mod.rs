@@ -188,7 +188,11 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         }
     }
 
-    fn get_type_parameter_bounds(&self, _: Span, def_id: DefId) -> ty::GenericPredicates<'tcx> {
+    fn get_type_parameter_bounds(
+        &self,
+        _: SpanSource,
+        def_id: DefId,
+    ) -> ty::GenericPredicates<'tcx> {
         let tcx = self.tcx;
         let hir_id = tcx.hir().local_def_id_to_hir_id(def_id.expect_local());
         let item_id = tcx.hir().ty_param_owner(hir_id);
@@ -212,10 +216,14 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         }
     }
 
-    fn re_infer(&self, def: Option<&ty::GenericParamDef>, span: Span) -> Option<ty::Region<'tcx>> {
+    fn re_infer(
+        &self,
+        def: Option<&ty::GenericParamDef>,
+        span_source: SpanSource,
+    ) -> Option<ty::Region<'tcx>> {
         let v = match def {
-            Some(def) => infer::EarlyBoundRegion(SpanSource::Span(span), def.name),
-            None => infer::MiscVariable(SpanSource::Span(span)),
+            Some(def) => infer::EarlyBoundRegion(span_source, def.name),
+            None => infer::MiscVariable(span_source),
         };
         Some(self.next_region_var(v))
     }
@@ -224,18 +232,16 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         true
     }
 
-    fn ty_infer(&self, param: Option<&ty::GenericParamDef>, span: Span) -> Ty<'tcx> {
+    fn ty_infer(&self, param: Option<&ty::GenericParamDef>, span_source: SpanSource) -> Ty<'tcx> {
         if let Some(param) = param {
-            if let GenericArgKind::Type(ty) =
-                self.var_for_def(SpanSource::Span(span), param).unpack()
-            {
+            if let GenericArgKind::Type(ty) = self.var_for_def(span_source, param).unpack() {
                 return ty;
             }
             unreachable!()
         } else {
             self.next_ty_var(TypeVariableOrigin {
                 kind: TypeVariableOriginKind::TypeInference,
-                span_source: SpanSource::Span(span),
+                span_source,
             })
         }
     }
@@ -244,35 +250,30 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         &self,
         ty: Ty<'tcx>,
         param: Option<&ty::GenericParamDef>,
-        span: Span,
+        span_source: SpanSource,
     ) -> &'tcx Const<'tcx> {
         if let Some(param) = param {
-            if let GenericArgKind::Const(ct) =
-                self.var_for_def(SpanSource::Span(span), param).unpack()
-            {
+            if let GenericArgKind::Const(ct) = self.var_for_def(span_source, param).unpack() {
                 return ct;
             }
             unreachable!()
         } else {
             self.next_const_var(
                 ty,
-                ConstVariableOrigin {
-                    kind: ConstVariableOriginKind::ConstInference,
-                    span_source: SpanSource::Span(span),
-                },
+                ConstVariableOrigin { kind: ConstVariableOriginKind::ConstInference, span_source },
             )
         }
     }
 
     fn projected_ty_from_poly_trait_ref(
         &self,
-        span: Span,
+        span_source: SpanSource,
         item_def_id: DefId,
         item_segment: &hir::PathSegment<'_>,
         poly_trait_ref: ty::PolyTraitRef<'tcx>,
     ) -> Ty<'tcx> {
         let (trait_ref, _) = self.replace_bound_vars_with_fresh_vars(
-            SpanSource::Span(span),
+            span_source,
             infer::LateBoundRegionConversionTime::AssocTypeProjection(item_def_id),
             &poly_trait_ref,
         );
@@ -280,7 +281,7 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         let item_substs = <dyn AstConv<'tcx>>::create_substs_for_associated_item(
             self,
             self.tcx,
-            span,
+            span_source,
             item_def_id,
             item_segment,
             trait_ref.substs,
@@ -289,11 +290,11 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         self.tcx().mk_projection(item_def_id, item_substs)
     }
 
-    fn normalize_ty(&self, span: Span, ty: Ty<'tcx>) -> Ty<'tcx> {
+    fn normalize_ty(&self, span_source: SpanSource, ty: Ty<'tcx>) -> Ty<'tcx> {
         if ty.has_escaping_bound_vars() {
             ty // FIXME: normalization and escaping regions
         } else {
-            self.normalize_associated_types_in(span, &ty)
+            self.normalize_associated_types_in(span_source, &ty)
         }
     }
 
@@ -301,7 +302,7 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         self.infcx.set_tainted_by_errors()
     }
 
-    fn record_ty(&self, hir_id: hir::HirId, ty: Ty<'tcx>, _span: Span) {
+    fn record_ty(&self, hir_id: hir::HirId, ty: Ty<'tcx>, _span_source: SpanSource) {
         self.write_ty(hir_id, ty)
     }
 }

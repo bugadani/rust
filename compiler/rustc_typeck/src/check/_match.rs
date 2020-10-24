@@ -132,7 +132,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         self.body_id,
                         self.param_env,
                         &ty,
-                        arm.body.span,
+                        SpanSource::Span(arm.body.span),
                     );
                     let mut suggest_box = !impl_trait_ret_ty.obligations.is_empty();
                     for o in impl_trait_ret_ty.obligations {

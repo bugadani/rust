@@ -588,7 +588,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         let violations = self.tcx.object_safety_violations(trait_def_id);
                         report_object_safety_error(
                             self.tcx,
-                            obligation.cause.span_source.to_span(tcx),
+                            obligation.cause.span_source,
                             trait_def_id,
                             violations,
                         )
@@ -789,12 +789,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
 
             TraitNotObjectSafe(did) => {
                 let violations = self.tcx.object_safety_violations(did);
-                report_object_safety_error(
-                    self.tcx,
-                    obligation.cause.span_source.to_span(tcx),
-                    did,
-                    violations,
-                )
+                report_object_safety_error(self.tcx, obligation.cause.span_source, did, violations)
             }
             ConstEvalFailure(ErrorHandled::TooGeneric) => {
                 bug!("too generic should have been handled in `is_const_evaluatable`");

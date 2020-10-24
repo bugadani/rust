@@ -562,11 +562,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         // easily (and locally) prove that we
                         // *have* reported an
                         // error. --nikomatsakis
-                        astconv.ty_infer(None, decl.output.span())
+                        astconv.ty_infer(None, SpanSource::Span(decl.output.span()))
                     })
                 }
 
-                _ => astconv.ty_infer(None, decl.output.span()),
+                _ => astconv.ty_infer(None, SpanSource::Span(decl.output.span())),
             },
         };
 
@@ -727,7 +727,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     ) -> ClosureSignatures<'tcx> {
         let liberated_sig = self.tcx().liberate_late_bound_regions(expr_def_id, &bound_sig);
         let liberated_sig = self.inh.normalize_associated_types_in(
-            body.value.span,
+            SpanSource::Span(body.value.span),
             body.value.hir_id,
             self.param_env,
             &liberated_sig,

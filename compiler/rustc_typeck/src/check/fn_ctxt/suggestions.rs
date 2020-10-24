@@ -79,7 +79,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let sig = self
             .replace_bound_vars_with_fresh_vars(SpanSource::Span(expr.span), infer::FnCall, &sig)
             .0;
-        let sig = self.normalize_associated_types_in(expr.span, &sig);
+        let sig = self.normalize_associated_types_in(SpanSource::Span(expr.span), &sig);
         if self.can_coerce(sig.output(), expected) {
             let (mut sugg_call, applicability) = if sig.inputs().is_empty() {
                 (String::new(), Applicability::MachineApplicable)

@@ -373,7 +373,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let fn_sig = fn_sig.subst(self.tcx, substs);
 
         let InferOk { value, obligations: o } =
-            self.normalize_associated_types_in_as_infer_ok(span_source.to_span(tcx), &fn_sig); //FIXME
+            self.normalize_associated_types_in_as_infer_ok(span_source, &fn_sig);
         let fn_sig = {
             obligations.extend(o);
             value
@@ -390,7 +390,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let bounds = self.tcx.predicates_of(def_id).instantiate(self.tcx, substs);
 
         let InferOk { value, obligations: o } =
-            self.normalize_associated_types_in_as_infer_ok(span_source.to_span(tcx), &bounds); //FIXME
+            self.normalize_associated_types_in_as_infer_ok(span_source, &bounds);
         let bounds = {
             obligations.extend(o);
             value

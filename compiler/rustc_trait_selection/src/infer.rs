@@ -4,12 +4,13 @@ use crate::traits::{self, TraitEngine, TraitEngineExt};
 use rustc_hir as hir;
 use rustc_hir::lang_items::LangItem;
 use rustc_infer::infer::outlives::env::OutlivesEnvironment;
-use rustc_infer::traits::ObligationCause;
+use rustc_infer::traits::{ObligationCause, ObligationCauseCode};
 use rustc_middle::arena::ArenaAllocatable;
 use rustc_middle::infer::canonical::{Canonical, CanonicalizedQueryResponse, QueryResponse};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::traits::query::Fallible;
 use rustc_middle::ty::{self, Ty, TypeFoldable};
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::DUMMY_SP;
 
 use std::fmt::Debug;
 
@@ -20,12 +21,12 @@ pub trait InferCtxtExt<'tcx> {
         &self,
         param_env: ty::ParamEnv<'tcx>,
         ty: Ty<'tcx>,
-        span: Span,
+        span_source: SpanSource,
     ) -> bool;
 
     fn partially_normalize_associated_types_in<T>(
         &self,
-        span: Span,
+        span_source: SpanSource,
         body_id: hir::HirId,
         param_env: ty::ParamEnv<'tcx>,
         value: &T,
@@ -39,12 +40,13 @@ impl<'cx, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'cx, 'tcx> {
         &self,
         param_env: ty::ParamEnv<'tcx>,
         ty: Ty<'tcx>,
-        span: Span,
+        span_source: SpanSource,
     ) -> bool {
         let ty = self.resolve_vars_if_possible(&ty);
 
         if !(param_env, ty).needs_infer() {
-            return ty.is_copy_modulo_regions(self.tcx.at(span), param_env);
+            return ty
+                .is_copy_modulo_regions(self.tcx.at(span_source.to_span(self.tcx)), param_env);
         }
 
         let copy_def_id = self.tcx.require_lang_item(LangItem::Copy, None);
@@ -53,14 +55,20 @@ impl<'cx, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'cx, 'tcx> {
         // rightly refuses to work with inference variables, but
         // moves_by_default has a cache, which we want to use in other
         // cases.
-        traits::type_known_to_meet_bound_modulo_regions(self, param_env, ty, copy_def_id, span)
+        traits::type_known_to_meet_bound_modulo_regions(
+            self,
+            param_env,
+            ty,
+            copy_def_id,
+            span_source,
+        )
     }
 
     /// Normalizes associated types in `value`, potentially returning
     /// new obligations that must further be processed.
     fn partially_normalize_associated_types_in<T>(
         &self,
-        span: Span,
+        span_source: SpanSource,
         body_id: hir::HirId,
         param_env: ty::ParamEnv<'tcx>,
         value: &T,
@@ -70,7 +78,7 @@ impl<'cx, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'cx, 'tcx> {
     {
         debug!("partially_normalize_associated_types_in(value={:?})", value);
         let mut selcx = traits::SelectionContext::new(self);
-        let cause = ObligationCause::misc(span, body_id);
+        let cause = ObligationCause::new(span_source, body_id, ObligationCauseCode::MiscObligation);
         let traits::Normalized { value, obligations } =
             traits::normalize(&mut selcx, param_env, cause, value);
         debug!(
@@ -142,7 +150,7 @@ pub trait OutlivesEnvironmentExt<'tcx> {
         infcx: &InferCtxt<'a, 'tcx>,
         fn_sig_tys: &[Ty<'tcx>],
         body_id: hir::HirId,
-        span: Span,
+        span_source: SpanSource,
     );
 }
 
@@ -168,14 +176,19 @@ impl<'tcx> OutlivesEnvironmentExt<'tcx> for OutlivesEnvironment<'tcx> {
         infcx: &InferCtxt<'a, 'tcx>,
         fn_sig_tys: &[Ty<'tcx>],
         body_id: hir::HirId,
-        span: Span,
+        span_source: SpanSource,
     ) {
         debug!("add_implied_bounds()");
 
         for &ty in fn_sig_tys {
             let ty = infcx.resolve_vars_if_possible(&ty);
             debug!("add_implied_bounds: ty = {}", ty);
-            let implied_bounds = infcx.implied_outlives_bounds(self.param_env, body_id, ty, span);
+            let implied_bounds = infcx.implied_outlives_bounds(
+                self.param_env,
+                body_id,
+                ty,
+                span_source.to_span(infcx.tcx),
+            );
             self.add_outlives_bounds(Some(infcx), implied_bounds)
         }
     }

@@ -732,11 +732,8 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
                     }
                 }
 
-                let InferOk { value: a_sig, mut obligations } = self
-                    .normalize_associated_types_in_as_infer_ok(
-                        self.cause.span_source.to_span(self.tcx),
-                        &a_sig,
-                    );
+                let InferOk { value: a_sig, mut obligations } =
+                    self.normalize_associated_types_in_as_infer_ok(self.cause.span_source, &a_sig);
 
                 let a_fn_pointer = self.tcx.mk_fn_ptr(a_sig);
                 let InferOk { value, obligations: o2 } = self.coerce_from_safe_fn(
@@ -977,8 +974,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         };
         if let (Some(a_sig), Some(b_sig)) = (a_sig, b_sig) {
             // The signature must match.
-            let a_sig = self.normalize_associated_types_in(new.span, &a_sig);
-            let b_sig = self.normalize_associated_types_in(new.span, &b_sig);
+            let a_sig = self.normalize_associated_types_in(SpanSource::Span(new.span), &a_sig);
+            let b_sig = self.normalize_associated_types_in(SpanSource::Span(new.span), &b_sig);
             let sig = self
                 .at(cause, self.param_env)
                 .trace(prev_ty, new_ty)

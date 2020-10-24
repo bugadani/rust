@@ -7,6 +7,7 @@ use rustc_hir::def_id::{DefIdMap, LocalDefId};
 use rustc_hir::HirIdMap;
 use rustc_infer::infer;
 use rustc_infer::infer::{InferCtxt, InferOk, TyCtxtInferExt};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_span::{self, Span};
@@ -157,7 +158,7 @@ impl Inherited<'a, 'tcx> {
 
     pub(super) fn normalize_associated_types_in<T>(
         &self,
-        span: Span,
+        span_source: SpanSource,
         body_id: hir::HirId,
         param_env: ty::ParamEnv<'tcx>,
         value: &T,
@@ -165,7 +166,8 @@ impl Inherited<'a, 'tcx> {
     where
         T: TypeFoldable<'tcx>,
     {
-        let ok = self.partially_normalize_associated_types_in(span, body_id, param_env, value);
+        let ok =
+            self.partially_normalize_associated_types_in(span_source, body_id, param_env, value);
         self.register_infer_ok_obligations(ok)
     }
 }

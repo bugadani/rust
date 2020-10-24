@@ -149,6 +149,10 @@ impl<'tcx> ObligationCause<'tcx> {
         ObligationCause::new(SpanSource::Span(span), hir::CRATE_HIR_ID, MiscObligation)
     }
 
+    pub fn dummy_with_def_id(def_id: DefId) -> ObligationCause<'tcx> {
+        ObligationCause::new(SpanSource::DefId(def_id), hir::CRATE_HIR_ID, MiscObligation)
+    }
+
     #[inline(always)]
     pub fn dummy() -> ObligationCause<'tcx> {
         ObligationCause { data: None }

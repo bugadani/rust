@@ -513,7 +513,7 @@ fn typeck_with_fallback<'tcx>(
             // Compute the fty from point of view of inside the fn.
             let fn_sig = tcx.liberate_late_bound_regions(def_id.to_def_id(), &fn_sig);
             let fn_sig = inh.normalize_associated_types_in(
-                body.value.span,
+                SpanSource::Span(body.value.span),
                 body_id.hir_id,
                 param_env,
                 &fn_sig,
@@ -544,11 +544,16 @@ fn typeck_with_fallback<'tcx>(
                     _ => fallback(),
                 });
 
-            let expected_type = fcx.normalize_associated_types_in(body.value.span, &expected_type);
+            let expected_type = fcx
+                .normalize_associated_types_in(SpanSource::Span(body.value.span), &expected_type);
             fcx.require_type_is_sized(expected_type, body.value.span, traits::ConstSized);
 
             let revealed_ty = if tcx.features().impl_trait_in_bindings {
-                fcx.instantiate_opaque_types_from_value(id, &expected_type, body.value.span)
+                fcx.instantiate_opaque_types_from_value(
+                    id,
+                    &expected_type,
+                    SpanSource::Span(body.value.span),
+                )
             } else {
                 expected_type
             };
@@ -619,8 +624,8 @@ fn typeck_with_fallback<'tcx>(
         fcx.resolve_generator_interiors(def_id.to_def_id());
 
         for (ty, span, code) in fcx.deferred_sized_obligations.borrow_mut().drain(..) {
-            let ty = fcx.normalize_ty(span, ty);
-            fcx.require_type_is_sized(ty, span, code);
+            let ty = fcx.normalize_ty(SpanSource::Span(span), ty);
+            fcx.require_type_is_sized(ty, span, code); // FIXME
         }
 
         fcx.select_all_obligations_or_error();
@@ -682,9 +687,10 @@ fn get_owner_return_paths(
 fn binding_opaque_type_cycle_error(
     tcx: TyCtxt<'tcx>,
     def_id: LocalDefId,
-    span: Span,
+    span_source: SpanSource,
     partially_expanded_type: Ty<'tcx>,
 ) {
+    let span = span_source.to_span(tcx);
     let mut err = struct_span_err!(tcx.sess, span, E0720, "cannot resolve opaque type");
     err.span_label(span, "cannot resolve opaque type");
     // Find the owner that declared this `impl Trait` type.

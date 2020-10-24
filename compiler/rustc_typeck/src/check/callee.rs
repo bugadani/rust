@@ -422,7 +422,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 &fn_sig,
             )
             .0;
-        let fn_sig = self.normalize_associated_types_in(call_expr.span, &fn_sig);
+        let fn_sig = self.normalize_associated_types_in(SpanSource::Span(call_expr.span), &fn_sig);
 
         // Call the generic checker.
         let expected_arg_tys = self.expected_inputs_for_expected_output(

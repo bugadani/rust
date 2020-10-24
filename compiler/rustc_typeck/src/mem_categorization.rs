@@ -49,6 +49,7 @@
 //! tied to `x`. The type of `x'` will be a borrowed pointer.
 
 use rustc_middle::hir::place::*;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment;
 use rustc_middle::ty::fold::TypeFoldable;
 use rustc_middle::ty::{self, Ty, TyCtxt};
@@ -120,8 +121,8 @@ impl<'a, 'tcx> MemCategorizationContext<'a, 'tcx> {
         self.infcx.tcx
     }
 
-    crate fn type_is_copy_modulo_regions(&self, ty: Ty<'tcx>, span: Span) -> bool {
-        self.infcx.type_is_copy_modulo_regions(self.param_env, ty, span)
+    crate fn type_is_copy_modulo_regions(&self, ty: Ty<'tcx>, span_source: SpanSource) -> bool {
+        self.infcx.type_is_copy_modulo_regions(self.param_env, ty, span_source)
     }
 
     fn resolve_vars_if_possible<T>(&self, value: &T) -> T

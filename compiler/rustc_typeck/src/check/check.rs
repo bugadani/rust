@@ -72,8 +72,11 @@ pub(super) fn check_fn<'a, 'tcx>(
 
     let declared_ret_ty = fn_sig.output();
 
-    let revealed_ret_ty =
-        fcx.instantiate_opaque_types_from_value(fn_id, &declared_ret_ty, decl.output.span());
+    let revealed_ret_ty = fcx.instantiate_opaque_types_from_value(
+        fn_id,
+        &declared_ret_ty,
+        SpanSource::Span(decl.output.span()),
+    );
     debug!("check_fn: declared_ret_ty: {}, revealed_ret_ty: {}", declared_ret_ty, revealed_ret_ty);
     fcx.ret_coercion = Some(RefCell::new(CoerceMany::new(revealed_ret_ty)));
     fcx.ret_type_span = Some(decl.output.span());
@@ -389,17 +392,17 @@ pub(super) fn check_opaque<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: LocalDefId,
     substs: SubstsRef<'tcx>,
-    span: Span,
+    span_source: SpanSource,
     origin: &hir::OpaqueTyOrigin,
 ) {
-    check_opaque_for_inheriting_lifetimes(tcx, def_id, span);
+    check_opaque_for_inheriting_lifetimes(tcx, def_id, span_source);
     if tcx.type_of(def_id).references_error() {
         return;
     }
-    if check_opaque_for_cycles(tcx, def_id, substs, span, origin).is_err() {
+    if check_opaque_for_cycles(tcx, def_id, substs, span_source, origin).is_err() {
         return;
     }
-    check_opaque_meets_bounds(tcx, def_id, substs, span, origin);
+    check_opaque_meets_bounds(tcx, def_id, substs, span_source, origin);
 }
 
 /// Checks that an opaque type does not use `Self` or `T::Foo` projections that would result
@@ -407,12 +410,14 @@ pub(super) fn check_opaque<'tcx>(
 pub(super) fn check_opaque_for_inheriting_lifetimes(
     tcx: TyCtxt<'tcx>,
     def_id: LocalDefId,
-    span: Span,
+    span_source: SpanSource,
 ) {
     let item = tcx.hir().expect_item(tcx.hir().local_def_id_to_hir_id(def_id));
     debug!(
         "check_opaque_for_inheriting_lifetimes: def_id={:?} span={:?} item={:?}",
-        def_id, span, item
+        def_id,
+        span_source.to_span(tcx),
+        item
     );
 
     #[derive(Debug)]
@@ -482,6 +487,7 @@ pub(super) fn check_opaque_for_inheriting_lifetimes(
                 },
                 _ => unreachable!(),
             };
+            let span = span_source.to_span(tcx);
 
             let mut err = struct_span_err!(
                 tcx.sess,
@@ -514,17 +520,17 @@ pub(super) fn check_opaque_for_cycles<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: LocalDefId,
     substs: SubstsRef<'tcx>,
-    span: Span,
+    span_source: SpanSource,
     origin: &hir::OpaqueTyOrigin,
 ) -> Result<(), ErrorReported> {
     if let Err(partially_expanded_type) = tcx.try_expand_impl_trait_type(def_id.to_def_id(), substs)
     {
         match origin {
-            hir::OpaqueTyOrigin::AsyncFn => async_opaque_type_cycle_error(tcx, span),
+            hir::OpaqueTyOrigin::AsyncFn => async_opaque_type_cycle_error(tcx, span_source),
             hir::OpaqueTyOrigin::Binding => {
-                binding_opaque_type_cycle_error(tcx, def_id, span, partially_expanded_type)
+                binding_opaque_type_cycle_error(tcx, def_id, span_source, partially_expanded_type)
             }
-            _ => opaque_type_cycle_error(tcx, def_id, span),
+            _ => opaque_type_cycle_error(tcx, def_id, span_source),
         }
         Err(ErrorReported)
     } else {
@@ -549,7 +555,7 @@ fn check_opaque_meets_bounds<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: LocalDefId,
     substs: SubstsRef<'tcx>,
-    span: Span,
+    span_source: SpanSource,
     origin: &hir::OpaqueTyOrigin,
 ) {
     match origin {
@@ -567,10 +573,14 @@ fn check_opaque_meets_bounds<'tcx>(
         let infcx = &inh.infcx;
         let opaque_ty = tcx.mk_opaque(def_id.to_def_id(), substs);
 
-        let misc_cause = traits::ObligationCause::misc(span, hir_id);
+        let misc_cause = traits::ObligationCause::new(
+            span_source,
+            hir_id,
+            traits::ObligationCauseCode::MiscObligation,
+        );
 
         let (_, opaque_type_map) = inh.register_infer_ok_obligations(
-            infcx.instantiate_opaque_types(def_id, hir_id, param_env, &opaque_ty, span),
+            infcx.instantiate_opaque_types(def_id, hir_id, param_env, &opaque_ty, span_source),
         );
 
         for (def_id, opaque_defn) in opaque_type_map {
@@ -598,7 +608,7 @@ fn check_opaque_meets_bounds<'tcx>(
         // Finally, resolve all regions. This catches wily misuses of
         // lifetime parameters.
         let fcx = FnCtxt::new(&inh, param_env, hir_id);
-        fcx.regionck_item(hir_id, span, &[]);
+        fcx.regionck_item(hir_id, span_source, &[]);
     });
 }
 
@@ -652,7 +662,7 @@ pub fn check_item_type<'tcx>(tcx: TyCtxt<'tcx>, it: &'tcx hir::Item<'tcx>) {
                             tcx,
                             assoc_item,
                             assoc_item,
-                            item.span,
+                            SpanSource::Span(item.span),
                             ty::TraitRef { def_id: def_id.to_def_id(), substs: trait_substs },
                         );
                     }
@@ -675,7 +685,7 @@ pub fn check_item_type<'tcx>(tcx: TyCtxt<'tcx>, it: &'tcx hir::Item<'tcx>) {
                 let def_id = tcx.hir().local_def_id(it.hir_id);
 
                 let substs = InternalSubsts::identity_for_item(tcx, def_id.to_def_id());
-                check_opaque(tcx, def_id, substs, it.span, &origin);
+                check_opaque(tcx, def_id, substs, SpanSource::Span(it.span), &origin);
             }
         }
         hir::ItemKind::TyAlias(..) => {
@@ -873,7 +883,7 @@ pub(super) fn check_impl_items_against_trait<'tcx>(
                         compare_const_impl(
                             tcx,
                             &ty_impl_item,
-                            impl_item.span,
+                            SpanSource::Span(impl_item.span),
                             &ty_trait_item,
                             impl_trait_ref,
                         );
@@ -902,7 +912,7 @@ pub(super) fn check_impl_items_against_trait<'tcx>(
                         compare_impl_method(
                             tcx,
                             &ty_impl_item,
-                            impl_item.span,
+                            SpanSource::Span(impl_item.span),
                             &ty_trait_item,
                             impl_trait_ref,
                             opt_trait_span,
@@ -930,7 +940,7 @@ pub(super) fn check_impl_items_against_trait<'tcx>(
                         compare_ty_impl(
                             tcx,
                             &ty_impl_item,
-                            impl_item.span,
+                            SpanSource::Span(impl_item.span),
                             &ty_trait_item,
                             impl_trait_ref,
                             opt_trait_span,
@@ -1358,7 +1368,8 @@ pub(super) fn check_impl_item_well_formed(tcx: TyCtxt<'_>, def_id: LocalDefId) {
     wfcheck::check_impl_item(tcx, def_id);
 }
 
-fn async_opaque_type_cycle_error(tcx: TyCtxt<'tcx>, span: Span) {
+fn async_opaque_type_cycle_error(tcx: TyCtxt<'tcx>, span_source: SpanSource) {
+    let span = span_source.to_span(tcx);
     struct_span_err!(tcx.sess, span, E0733, "recursion in an `async fn` requires boxing")
         .span_label(span, "recursive `async fn`")
         .note("a recursive `async fn` must be rewritten to return a boxed `dyn Future`")
@@ -1373,7 +1384,8 @@ fn async_opaque_type_cycle_error(tcx: TyCtxt<'tcx>, span: Span) {
 ///
 /// If all the return expressions evaluate to `!`, then we explain that the error will go away
 /// after changing it. This can happen when a user uses `panic!()` or similar as a placeholder.
-fn opaque_type_cycle_error(tcx: TyCtxt<'tcx>, def_id: LocalDefId, span: Span) {
+fn opaque_type_cycle_error(tcx: TyCtxt<'tcx>, def_id: LocalDefId, span_source: SpanSource) {
+    let span = span_source.to_span(tcx);
     let mut err = struct_span_err!(tcx.sess, span, E0720, "cannot resolve opaque type");
 
     let mut label = false;
