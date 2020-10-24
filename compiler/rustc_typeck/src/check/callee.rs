@@ -66,7 +66,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         expected: Expectation<'tcx>,
     ) -> Ty<'tcx> {
         let original_callee_ty = self.check_expr(callee_expr);
-        let expr_ty = self.structurally_resolved_type(call_expr.span, original_callee_ty);
+        let expr_ty = self.structurally_resolved_type(SpanSource::Span(call_expr.span), original_callee_ty);
 
         let mut autoderef = self.autoderef(callee_expr.span, expr_ty);
         let mut result = None;
@@ -108,7 +108,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         autoderef: &Autoderef<'a, 'tcx>,
     ) -> Option<CallStep<'tcx>> {
         let adjusted_ty =
-            self.structurally_resolved_type(autoderef.span(), autoderef.final_ty(false));
+            self.structurally_resolved_type(SpanSource::Span(autoderef.span()), autoderef.final_ty(false));
         debug!(
             "try_overloaded_call_step(call_expr={:?}, adjusted_ty={:?})",
             call_expr, adjusted_ty
@@ -527,10 +527,10 @@ impl<'a, 'tcx> DeferredCallResolution<'tcx> {
                 for (method_arg_ty, self_arg_ty) in
                     method_sig.inputs().iter().skip(1).zip(self.fn_sig.inputs())
                 {
-                    fcx.demand_eqtype(self.call_expr.span, &self_arg_ty, &method_arg_ty);
+                    fcx.demand_eqtype(SpanSource::Span(self.call_expr.span), &self_arg_ty, &method_arg_ty);
                 }
 
-                fcx.demand_eqtype(self.call_expr.span, method_sig.output(), self.fn_sig.output());
+                fcx.demand_eqtype(SpanSource::Span(self.call_expr.span), method_sig.output(), self.fn_sig.output());
 
                 let mut adjustments = self.adjustments;
                 adjustments.extend(autoref);

@@ -59,7 +59,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // #55810: Type check patterns first so we get types for all bindings.
         for arm in arms {
-            self.check_pat_top(&arm.pat, scrutinee_ty, Some(scrut.span), true);
+            self.check_pat_top(&arm.pat, scrutinee_ty, Some(SpanSource::Span(scrut.span)), true);
         }
 
         // Now typecheck the blocks.
@@ -173,7 +173,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if source_if {
                 let then_expr = &arms[0].body;
                 match (i, if_no_else) {
-                    (0, _) => coercion.coerce(self, &self.misc(expr.span), &arm.body, arm_ty),
+                    (0, _) => coercion.coerce(self, &self.misc(SpanSource::Span(expr.span)), &arm.body, arm_ty),
                     (_, true) => {} // Handled above to avoid duplicated type errors (#60254).
                     (_, _) => {
                         let then_ty = prior_arm_ty.unwrap();
@@ -212,7 +212,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }),
                     ),
                 };
-                let cause = self.cause(span, code);
+                let cause = self.cause(SpanSource::Span(span), code);
                 coercion.coerce(self, &cause, &arm.body, arm_ty);
                 other_arms.push(arm_span);
                 if other_arms.len() > 5 {
@@ -273,7 +273,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // If this `if` expr is the parent's function return expr,
         // the cause of the type coercion is the return type, point at it. (#25228)
         let ret_reason = self.maybe_get_coercion_reason(then_expr.hir_id, span);
-        let cause = self.cause(span, ObligationCauseCode::IfExpressionWithNoElse);
+        let cause = self.cause(SpanSource::Span(span), ObligationCauseCode::IfExpressionWithNoElse);
         let mut error = false;
         coercion.coerce_forced_unit(
             self,
@@ -418,7 +418,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Finally construct the cause:
         self.cause(
-            error_sp,
+            SpanSource::Span(error_sp),
             ObligationCauseCode::IfExpression(box IfExpressionCause {
                 then: then_sp,
                 else_sp: error_sp,

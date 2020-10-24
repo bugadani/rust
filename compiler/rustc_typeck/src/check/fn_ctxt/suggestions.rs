@@ -496,7 +496,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     ty: expected,
                 })
                 .potentially_quantified(self.tcx, ty::PredicateKind::ForAll);
-                let obligation = traits::Obligation::new(self.misc(sp), self.param_env, predicate);
+                let obligation = traits::Obligation::new(self.misc(SpanSource::Span(sp)), self.param_env, predicate);
 
                 debug!("suggest_missing_await: trying obligation {:?}", obligation);
 

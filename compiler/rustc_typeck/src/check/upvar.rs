@@ -172,7 +172,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // substs with the kind we inferred.
             let inferred_kind = delegate.current_closure_kind;
             let closure_kind_ty = closure_substs.as_closure().kind_ty();
-            self.demand_eqtype(span, inferred_kind.to_ty(self.tcx), closure_kind_ty);
+            self.demand_eqtype(SpanSource::Span(span), inferred_kind.to_ty(self.tcx), closure_kind_ty);
 
             // If we have an origin, store it.
             if let Some(origin) = delegate.current_origin {

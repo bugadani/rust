@@ -219,7 +219,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let mut expected_arg_tys = expected_arg_tys.to_vec();
 
         let formal_tys = if tuple_arguments == TupleArguments {
-            let tuple_type = self.structurally_resolved_type(sp, fn_inputs[0]);
+            let tuple_type = self.structurally_resolved_type(SpanSource::Span(sp), fn_inputs[0]);
             match tuple_type.kind() {
                 ty::Tuple(arg_types) if arg_types.len() != args.len() => {
                     param_count_error(arg_types.len(), args.len(), "E0057", false, false);
@@ -372,7 +372,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 // There are a few types which get autopromoted when passed via varargs
                 // in C but we just error out instead and require explicit casts.
-                let arg_ty = self.structurally_resolved_type(arg.span, arg_ty);
+                let arg_ty = self.structurally_resolved_type(SpanSource::Span(arg.span), arg_ty);
                 match arg_ty.kind() {
                     ty::Float(ast::FloatTy::F32) => {
                         variadic_error(tcx.sess, arg.span, arg_ty, "c_double");
@@ -510,7 +510,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // type of the place it is referencing, and not some
             // supertype thereof.
             let init_ty = self.check_expr_with_needs(init, Needs::maybe_mut_place(m));
-            self.demand_eqtype(init.span, local_ty, init_ty);
+            self.demand_eqtype(SpanSource::Span(init.span), local_ty, init_ty);
             init_ty
         } else {
             self.check_expr_coercable_to_type(init, local_ty, None)
@@ -531,8 +531,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Does the expected pattern type originate from an expression and what is the span?
         let (origin_expr, ty_span) = match (local.ty, local.init) {
-            (Some(ty), _) => (false, Some(ty.span)), // Bias towards the explicit user type.
-            (_, Some(init)) => (true, Some(init.span)), // No explicit type; so use the scrutinee.
+            (Some(ty), _) => (false, Some(SpanSource::Span(ty.span))), // Bias towards the explicit user type.
+            (_, Some(init)) => (true, Some(SpanSource::Span(init.span))), // No explicit type; so use the scrutinee.
             _ => (false, None), // We have `let $pat;`, so the expected type is unconstrained.
         };
 
@@ -645,7 +645,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if let Some(tail_expr_ty) = tail_expr_ty {
                 let tail_expr = tail_expr.unwrap();
                 let span = self.get_expr_coercion_span(tail_expr);
-                let cause = self.cause(span, ObligationCauseCode::BlockTailExpression(blk.hir_id));
+                let cause = self.cause(SpanSource::Span(span), ObligationCauseCode::BlockTailExpression(blk.hir_id));
                 coerce.coerce(self, &cause, tail_expr, tail_expr_ty);
             } else {
                 // Subtle: if there is no explicit tail expression,
@@ -680,7 +680,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
                     coerce.coerce_forced_unit(
                         self,
-                        &self.misc(sp),
+                        &self.misc(SpanSource::Span(sp)),
                         &mut |err| {
                             if let Some(expected_ty) = expected.only_has_type(self) {
                                 self.consider_hint_about_removing_semicolon(blk, expected_ty, err);

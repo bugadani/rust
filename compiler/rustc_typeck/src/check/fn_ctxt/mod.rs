@@ -141,12 +141,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn cause(&self, span: Span, code: ObligationCauseCode<'tcx>) -> ObligationCause<'tcx> {
-        ObligationCause::new(SpanSource::Span(span), self.body_id, code)
+    pub fn cause(&self, span_source: SpanSource, code: ObligationCauseCode<'tcx>) -> ObligationCause<'tcx> {
+        ObligationCause::new(span_source, self.body_id, code)
     }
 
-    pub fn misc(&self, span: Span) -> ObligationCause<'tcx> {
-        self.cause(span, ObligationCauseCode::MiscObligation)
+    pub fn misc(&self, span_source: SpanSource) -> ObligationCause<'tcx> {
+        self.cause(span_source, ObligationCauseCode::MiscObligation)
     }
 
     pub fn sess(&self) -> &Session {

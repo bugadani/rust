@@ -50,7 +50,7 @@ use std::fmt::Display;
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn check_expr_eq_type(&self, expr: &'tcx hir::Expr<'tcx>, expected: Ty<'tcx>) {
         let ty = self.check_expr_with_hint(expr, expected);
-        self.demand_eqtype(expr.span, expected, ty);
+        self.demand_eqtype(SpanSource::Span(expr.span), expected, ty);
     }
 
     pub fn check_expr_has_type_or_error(
@@ -326,7 +326,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let mut oprnd_t = self.check_expr_with_expectation(&oprnd, expected_inner);
 
         if !oprnd_t.references_error() {
-            oprnd_t = self.structurally_resolved_type(expr.span, oprnd_t);
+            oprnd_t = self.structurally_resolved_type(SpanSource::Span(expr.span), oprnd_t);
             match unop {
                 hir::UnOp::UnDeref => {
                     if let Some(ty) = self.lookup_derefing(expr, oprnd, oprnd_t) {
@@ -565,12 +565,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 // Recurse without `enclosing_breakables` borrowed.
                 e_ty = self.check_expr_with_hint(e, coerce_to);
-                cause = self.misc(e.span);
+                cause = self.misc(SpanSource::Span(e.span));
             } else {
                 // Otherwise, this is a break *without* a value. That's
                 // always legal, and is equivalent to `break ()`.
                 e_ty = tcx.mk_unit();
-                cause = self.misc(expr.span);
+                cause = self.misc(SpanSource::Span(expr.span));
             }
 
             // Now that we have type-checked `expr_opt`, borrow
@@ -683,7 +683,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if self.ret_coercion_span.borrow().is_none() {
                 *self.ret_coercion_span.borrow_mut() = Some(expr.span);
             }
-            let cause = self.cause(expr.span, ObligationCauseCode::ReturnNoExpression);
+            let cause = self.cause(SpanSource::Span(expr.span), ObligationCauseCode::ReturnNoExpression);
             if let Some((fn_decl, _)) = self.get_fn_decl(expr.hir_id) {
                 coercion.coerce_forced_unit(
                     self,
@@ -715,7 +715,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let return_expr_ty = self.check_expr_with_hint(return_expr, ret_ty.clone());
         ret_coercion.borrow_mut().coerce(
             self,
-            &self.cause(return_expr.span, ObligationCauseCode::ReturnValue(return_expr.hir_id)),
+            &self.cause(SpanSource::Span(return_expr.span), ObligationCauseCode::ReturnValue(return_expr.hir_id)),
             return_expr,
             return_expr_ty,
         );
@@ -884,7 +884,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let rcvr = &args[0];
         let rcvr_t = self.check_expr(&rcvr);
         // no need to check for bot/err -- callee does that
-        let rcvr_t = self.structurally_resolved_type(args[0].span, rcvr_t);
+        let rcvr_t = self.structurally_resolved_type(SpanSource::Span(args[0].span), rcvr_t);
 
         let method = match self.lookup_method(rcvr_t, segment, span, expr, rcvr) {
             Ok(method) => {
@@ -1018,7 +1018,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             assert_eq!(self.diverges.get(), Diverges::Maybe);
             for e in args {
                 let e_ty = self.check_expr_with_hint(e, coerce_to);
-                let cause = self.misc(e.span);
+                let cause = self.misc(SpanSource::Span(e.span));
                 coerce.coerce(self, &cause, e, e_ty);
             }
             coerce.complete(self)
@@ -1131,7 +1131,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             adt_ty,
             expected,
             expr.hir_id,
-            qpath.span(),
+            SpanSource::Span(qpath.span()),
             variant,
             fields,
             base_expr.is_none(),
@@ -1178,7 +1178,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         adt_ty: Ty<'tcx>,
         expected: Expectation<'tcx>,
         expr_id: hir::HirId,
-        span: Span,
+        span_source: SpanSource,
         variant: &'tcx ty::VariantDef,
         ast_fields: &'tcx [hir::Field<'tcx>],
         check_completeness: bool,
@@ -1186,16 +1186,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let tcx = self.tcx;
 
         let adt_ty_hint = self
-            .expected_inputs_for_expected_output(span, expected, adt_ty, &[adt_ty])
+            .expected_inputs_for_expected_output(span_source, expected, adt_ty, &[adt_ty])
             .get(0)
             .cloned()
             .unwrap_or(adt_ty);
         // re-link the regions that EIfEO can erase.
-        self.demand_eqtype(span, adt_ty_hint, adt_ty);
+        self.demand_eqtype(span_source, adt_ty_hint, adt_ty);
 
         let (substs, adt_kind, kind_name) = match &adt_ty.kind() {
             &ty::Adt(adt, substs) => (substs, adt.adt_kind(), adt.variant_descr()),
-            _ => span_bug!(span, "non-ADT passed to check_expr_struct_fields"),
+            _ => span_bug!(span_source.to_span(tcx), "non-ADT passed to check_expr_struct_fields"),
         };
 
         let mut remaining_fields = variant
@@ -1233,7 +1233,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         ident,
                     });
                 } else {
-                    self.report_unknown_field(adt_ty, variant, field, ast_fields, kind_name, span);
+                    self.report_unknown_field(adt_ty, variant, field, ast_fields, kind_name, span_source);
                 }
 
                 tcx.ty_error()
@@ -1247,7 +1247,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Make sure the programmer specified correct number of fields.
         if kind_name == "union" {
             if ast_fields.len() != 1 {
-                tcx.sess.span_err(span, "union expressions should have exactly one field");
+                tcx.sess.span_err(span_source.to_span(tcx), "union expressions should have exactly one field");
             }
         } else if check_completeness && !error_happened && !remaining_fields.is_empty() {
             let no_accessible_remaining_fields = remaining_fields
@@ -1258,9 +1258,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 .is_none();
 
             if no_accessible_remaining_fields {
-                self.report_no_accessible_fields(adt_ty, span);
+                self.report_no_accessible_fields(adt_ty, span_source);
             } else {
-                self.report_missing_field(adt_ty, span, remaining_fields);
+                self.report_missing_field(adt_ty, span_source, remaining_fields);
             }
         }
 
@@ -1294,7 +1294,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn report_missing_field(
         &self,
         adt_ty: Ty<'tcx>,
-        span: Span,
+        span_source: SpanSource,
         remaining_fields: FxHashMap<Ident, (usize, &ty::FieldDef)>,
     ) {
         let tcx = self.tcx;
@@ -1318,6 +1318,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             .collect::<Vec<_>>()
             .join(", ");
 
+        let span = span_source.to_span(tcx);
         struct_span_err!(
             tcx.sess,
             span,
@@ -1343,9 +1344,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     ///
     /// error: aborting due to previous error
     /// ```
-    fn report_no_accessible_fields(&self, adt_ty: Ty<'tcx>, span: Span) {
+    fn report_no_accessible_fields(&self, adt_ty: Ty<'tcx>, span_source: SpanSource) {
         self.tcx.sess.span_err(
-            span,
+            span_source.to_span(self.tcx),
             &format!(
                 "cannot construct `{}` with struct literal syntax due to inaccessible fields",
                 adt_ty,
@@ -1360,7 +1361,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         field: &hir::Field<'_>,
         skip_fields: &[hir::Field<'_>],
         kind_name: &str,
-        ty_span: Span,
+        ty_span: SpanSource,
     ) {
         if variant.is_recovered() {
             self.set_tainted_by_errors();
@@ -1396,7 +1397,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 err.span_label(variant.ident.span, format!("`{adt}` defined here", adt = ty));
                 err.span_label(field.ident.span, "field does not exist");
                 err.span_label(
-                    ty_span,
+                    ty_span.to_span(self.tcx),
                     format!(
                         "`{adt}` is a tuple {kind_name}, \
                          use the appropriate syntax: `{adt}(/* fields */)`",
@@ -1501,7 +1502,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         field: Ident,
     ) -> Ty<'tcx> {
         let expr_t = self.check_expr(base);
-        let expr_t = self.structurally_resolved_type(base.span, expr_t);
+        let expr_t = self.structurally_resolved_type(SpanSource::Span(base.span), expr_t);
         let mut private_candidate = None;
         let mut autoderef = self.autoderef(expr.span, expr_t);
         while let Some((base_t, _)) = autoderef.next() {
@@ -1548,7 +1549,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 _ => {}
             }
         }
-        self.structurally_resolved_type(autoderef.span(), autoderef.final_ty(false));
+        self.structurally_resolved_type(SpanSource::Span(autoderef.span()), autoderef.final_ty(false));
 
         if let Some((did, field_ty)) = private_candidate {
             self.ban_private_field_access(expr, expr_t, field, did);
@@ -1592,7 +1593,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let projection_ty = self.tcx.projection_ty_from_predicates((def_id, item_def_id));
         debug!("suggest_await_on_field_access: projection_ty={:?}", projection_ty);
 
-        let cause = self.misc(expr.span);
+        let cause = self.misc(SpanSource::Span(expr.span));
         let mut selcx = SelectionContext::new(&self.infcx);
 
         let mut obligations = vec![];
@@ -1843,7 +1844,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         } else if idx_t.references_error() {
             idx_t
         } else {
-            let base_t = self.structurally_resolved_type(base.span, base_t);
+            let base_t = self.structurally_resolved_type(SpanSource::Span(base.span), base_t);
             match self.lookup_indexing(expr, base, base_t, idx_t) {
                 Some((index_ty, element_ty)) => {
                     // two-phase not needed because index_ty is never mutable
@@ -1938,7 +1939,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // allows them to be inferred based on how they are used later in the
         // function.
         if is_input {
-            let ty = self.structurally_resolved_type(expr.span, &ty);
+            let ty = self.structurally_resolved_type(SpanSource::Span(expr.span), &ty);
             match *ty.kind() {
                 ty::FnDef(..) => {
                     let fnptr_ty = self.tcx.mk_fn_ptr(ty.fn_sig(self.tcx));

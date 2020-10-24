@@ -112,10 +112,10 @@ pub(super) fn check_fn<'a, 'tcx>(
     // C-variadic fns also have a `VaList` input that's not listed in `fn_sig`
     // (as it's created inside the body itself, not passed in from outside).
     let maybe_va_list = if fn_sig.c_variadic {
-        let span = body.params.last().unwrap().span;
-        let va_list_did = tcx.require_lang_item(LangItem::VaList, Some(SpanSource::Span(span)));
+        let span = SpanSource::Span(body.params.last().unwrap().span);
+        let va_list_did = tcx.require_lang_item(LangItem::VaList, Some(span));
         let region =
-            fcx.next_region_var(RegionVariableOrigin::MiscVariable(SpanSource::Span(span)));
+            fcx.next_region_var(RegionVariableOrigin::MiscVariable(span));
 
         Some(tcx.type_of(va_list_did).subst(tcx, &[region.into()]))
     } else {
@@ -138,7 +138,7 @@ pub(super) fn check_fn<'a, 'tcx>(
             fcx.require_type_is_sized(
                 param_ty,
                 param.pat.span,
-                traits::SizedArgumentType(ty_span.map(SpanSource::Span)),
+                traits::SizedArgumentType(ty_span),
             );
         }
 

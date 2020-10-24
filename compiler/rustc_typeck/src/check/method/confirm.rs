@@ -154,7 +154,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         let mut adjustments = self.adjust_steps(&autoderef);
 
         let mut target =
-            self.structurally_resolved_type(autoderef.span(), autoderef.final_ty(false));
+            self.structurally_resolved_type(SpanSource::Span(autoderef.span()), autoderef.final_ty(false));
 
         if let Some(mutbl) = pick.autoref {
             let region =
@@ -354,7 +354,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
             self_ty, method_self_ty, self.span, pick
         );
         let cause = self.cause(
-            self.span,
+            SpanSource::Span(self.span),
             ObligationCauseCode::UnifyReceiver(Box::new(UnifyReceiverContext {
                 assoc_item: pick.item,
                 param_env: self.param_env,

@@ -688,7 +688,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         };
         debug!("fallback_if_possible: defaulting `{:?}` to `{:?}`", ty, fallback);
-        self.demand_eqtype(rustc_span::DUMMY_SP, ty, fallback);
+        self.demand_eqtype(SpanSource::DUMMY, ty, fallback);
         true
     }
 
@@ -828,7 +828,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // return type (likely containing type variables if the function
                 // is polymorphic) and the expected return type.
                 // No argument expectations are produced if unification fails.
-                let origin = self.misc(call_span);
+                let origin = self.misc(SpanSource::Span(call_span));
                 let ures = self.at(&origin, self.param_env).sup(ret_ty, &formal_ret);
 
                 // FIXME(#27336) can't use ? here, Try::from_error doesn't default
@@ -1350,7 +1350,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let ty = tcx.type_of(impl_def_id);
 
             let impl_ty = self.instantiate_type_scheme(span, &substs, &ty);
-            match self.at(&self.misc(span), self.param_env).sup(impl_ty, self_ty) {
+            match self.at(&self.misc(SpanSource::Span(span)), self.param_env).sup(impl_ty, self_ty) {
                 Ok(ok) => self.register_infer_ok_obligations(ok),
                 Err(_) => {
                     self.tcx.sess.delay_span_bug(
@@ -1400,18 +1400,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Resolves `typ` by a single level if `typ` is a type variable.
     /// If no resolution is possible, then an error is reported.
     /// Numeric inference variables may be left unresolved.
-    pub fn structurally_resolved_type(&self, sp: Span, ty: Ty<'tcx>) -> Ty<'tcx> {
+    pub fn structurally_resolved_type(&self, sp_source: SpanSource, ty: Ty<'tcx>) -> Ty<'tcx> {
         let ty = self.resolve_vars_with_obligations(ty);
         if !ty.is_ty_var() {
             ty
         } else {
             if !self.is_tainted_by_errors() {
-                self.emit_inference_failure_err((**self).body_id, sp, ty.into(), E0282)
+                self.emit_inference_failure_err((**self).body_id, sp_source.to_span(self.tcx), ty.into(), E0282)
                     .note("type must be known at this point")
                     .emit();
             }
             let err = self.tcx.ty_error();
-            self.demand_suptype(sp, err, ty);
+            self.demand_suptype(sp_source, err, ty);
             err
         }
     }

@@ -42,8 +42,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     // Requires that the two types unify, and prints an error message if
     // they don't.
-    pub fn demand_suptype(&self, sp: Span, expected: Ty<'tcx>, actual: Ty<'tcx>) {
-        if let Some(mut e) = self.demand_suptype_diag(sp, expected, actual) {
+    pub fn demand_suptype(&self, sp_source: SpanSource, expected: Ty<'tcx>, actual: Ty<'tcx>) {
+        if let Some(mut e) = self.demand_suptype_diag(sp_source, expected, actual) {
             e.emit();
         }
     }
@@ -54,7 +54,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         expected: Ty<'tcx>,
         actual: Ty<'tcx>,
     ) -> Option<DiagnosticBuilder<'tcx>> {
-        self.demand_suptype_with_origin(&self.misc(sp), expected, actual)
+        self.demand_suptype_with_origin(&self.misc(SpanSource::Span(sp)), expected, actual)
     }
 
     pub fn demand_suptype_with_origin(
@@ -72,19 +72,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn demand_eqtype(&self, sp: Span, expected: Ty<'tcx>, actual: Ty<'tcx>) {
-        if let Some(mut err) = self.demand_eqtype_diag(sp, expected, actual) {
+    pub fn demand_eqtype(&self, sp_source: SpanSource, expected: Ty<'tcx>, actual: Ty<'tcx>) {
+        if let Some(mut err) = self.demand_eqtype_diag(sp_source, expected, actual) {
             err.emit();
         }
     }
 
     pub fn demand_eqtype_diag(
         &self,
-        sp: Span,
+        sp_source: SpanSource,
         expected: Ty<'tcx>,
         actual: Ty<'tcx>,
     ) -> Option<DiagnosticBuilder<'tcx>> {
-        self.demand_eqtype_with_origin(&self.misc(sp), expected, actual)
+        self.demand_eqtype_with_origin(&self.misc(sp_source), expected, actual)
     }
 
     pub fn demand_eqtype_with_origin(
@@ -138,7 +138,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         };
 
         let expr = expr.peel_drop_temps();
-        let cause = self.misc(expr.span);
+        let cause = self.misc(SpanSource::Span(expr.span));
         let expr_ty = self.resolve_vars_with_obligations(checked_ty);
         let mut err = self.report_mismatched_types(&cause, expected, expr_ty, e);
 

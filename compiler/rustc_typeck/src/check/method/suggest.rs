@@ -397,7 +397,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         if let Mode::MethodCall = mode {
                             if let SelfSource::MethodCall(call) = source {
                                 self.suggest_await_before_method(
-                                    &mut err, item_name, actual, call, span,
+                                    &mut err, item_name, actual, call, SpanSource::Span(span),
                                 );
                             }
                         }
@@ -869,7 +869,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         item_name: Ident,
         ty: Ty<'tcx>,
         call: &hir::Expr<'_>,
-        span: Span,
+        span_source: SpanSource,
     ) {
         if let ty::Opaque(def_id, _) = *ty.kind() {
             let future_trait = self.tcx.require_lang_item(LangItem::Future, None);
@@ -883,7 +883,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 .def_id;
 
             let projection_ty = self.tcx.projection_ty_from_predicates((def_id, item_def_id));
-            let cause = self.misc(span);
+            let cause = self.misc(span_source);
             let mut selcx = SelectionContext::new(&self.infcx);
             let mut obligations = vec![];
             if let Some(projection_ty) = projection_ty {
@@ -904,7 +904,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 debug!("suggest_await_before_method: is_method_exist={}", method_exists);
                 if method_exists {
                     err.span_suggestion_verbose(
-                        span.shrink_to_lo(),
+                        span_source.to_span(self.tcx).shrink_to_lo(),
                         "consider awaiting before this method call",
                         "await.".to_string(),
                         Applicability::MaybeIncorrect,

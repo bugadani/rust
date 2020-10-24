@@ -36,6 +36,7 @@ use rustc_ast as ast;
 use rustc_errors::{struct_span_err, Applicability, DiagnosticBuilder, ErrorReported};
 use rustc_hir as hir;
 use rustc_hir::lang_items::LangItem;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::AllowTwoPhase;
 use rustc_middle::ty::cast::{CastKind, CastTy};
 use rustc_middle::ty::error::TypeError;
@@ -552,8 +553,8 @@ impl<'a, 'tcx> CastCheck<'tcx> {
     }
 
     pub fn check(mut self, fcx: &FnCtxt<'a, 'tcx>) {
-        self.expr_ty = fcx.structurally_resolved_type(self.span, self.expr_ty);
-        self.cast_ty = fcx.structurally_resolved_type(self.span, self.cast_ty);
+        self.expr_ty = fcx.structurally_resolved_type(SpanSource::Span(self.span), self.expr_ty);
+        self.cast_ty = fcx.structurally_resolved_type(SpanSource::Span(self.span), self.cast_ty);
 
         debug!("check_cast({}, {:?} as {:?})", self.expr.hir_id, self.expr_ty, self.cast_ty);
 
@@ -788,7 +789,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
                     });
 
                 // this will report a type mismatch if needed
-                fcx.demand_eqtype(self.span, ety, m_cast.ty);
+                fcx.demand_eqtype(SpanSource::Span(self.span), ety, m_cast.ty);
                 return Ok(CastKind::ArrayPtrCast);
             }
         }

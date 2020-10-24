@@ -42,6 +42,7 @@ use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
 use rustc_infer::infer::{Coercion, InferOk, InferResult};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::{
     Adjust, Adjustment, AllowTwoPhase, AutoBorrow, AutoBorrowMutability, PointerCast,
 };
@@ -861,7 +862,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let source = self.resolve_vars_with_obligations(expr_ty);
         debug!("coercion::try({:?}: {:?} -> {:?})", expr, source, target);
 
-        let cause = self.cause(expr.span, ObligationCauseCode::ExprAssignable);
+        let cause = self.cause(SpanSource::Span(expr.span), ObligationCauseCode::ExprAssignable);
         let coerce = Coerce::new(self, cause, allow_two_phase);
         let ok = self.commit_if_ok(|_| coerce.coerce(source, target))?;
 
@@ -875,7 +876,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let source = self.resolve_vars_with_obligations(expr_ty);
         debug!("coercion::can({:?} -> {:?})", source, target);
 
-        let cause = self.cause(rustc_span::DUMMY_SP, ObligationCauseCode::ExprAssignable);
+        let cause = self.cause(SpanSource::DUMMY, ObligationCauseCode::ExprAssignable);
         // We don't ever need two-phase here since we throw out the result of the coercion
         let coerce = Coerce::new(self, cause, AllowTwoPhase::No);
         self.probe(|_| coerce.coerce(source, target)).is_ok()
@@ -885,7 +886,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// how many dereference steps needed to achieve `expr_ty <: target`. If
     /// it's not possible, return `None`.
     pub fn deref_steps(&self, expr_ty: Ty<'tcx>, target: Ty<'tcx>) -> Option<usize> {
-        let cause = self.cause(rustc_span::DUMMY_SP, ObligationCauseCode::ExprAssignable);
+        let cause = self.cause(SpanSource::DUMMY, ObligationCauseCode::ExprAssignable);
         // We don't ever need two-phase here since we throw out the result of the coercion
         let coerce = Coerce::new(self, cause, AllowTwoPhase::No);
         coerce

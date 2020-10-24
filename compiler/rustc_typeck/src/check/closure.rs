@@ -506,7 +506,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 ); // recreated from (*) above
 
                 // Check that E' = S'.
-                let cause = self.misc(hir_ty.span);
+                let cause = self.misc(SpanSource::Span(hir_ty.span));
                 let InferOk { value: (), obligations } =
                     self.at(&cause, self.param_env).eq(*expected_ty, supplied_ty)?;
                 all_obligations.extend(obligations);
@@ -517,7 +517,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 LateBoundRegionConversionTime::FnCall,
                 &supplied_sig.output(),
             );
-            let cause = &self.misc(decl.output.span());
+            let cause = &self.misc(SpanSource::Span(decl.output.span()));
             let InferOk { value: (), obligations } = self
                 .at(cause, self.param_env)
                 .eq(expected_sigs.liberated_sig.output(), supplied_output_ty)?;

@@ -394,7 +394,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let ty = self
                     .probe_instantiate_query_response(SpanSource::Span(span), &orig_values, ty)
                     .unwrap_or_else(|_| span_bug!(span, "instantiating {:?} failed?", ty));
-                let ty = self.structurally_resolved_type(span, ty.value);
+                let ty = self.structurally_resolved_type(SpanSource::Span(span), ty.value);
                 assert!(matches!(ty.kind(), ty::Error(_)));
                 return Err(MethodError::NoMatch(NoMatchData::new(
                     Vec::new(),
