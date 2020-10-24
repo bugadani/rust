@@ -78,6 +78,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         error: MethodError<'tcx>,
         args: Option<&'tcx [hir::Expr<'tcx>]>,
     ) -> Option<DiagnosticBuilder<'_>> {
+        let mut span_source = span_source;
+        let orig_span = span_source.to_span(self.tcx);
+
         // Avoid suggestions when we don't know what's going on.
         if rcvr_ty.references_error() {
             return None;
@@ -232,7 +235,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         };
 
-        let orig_span = span_source.to_span(self.tcx);
         let sugg_span = if let SelfSource::MethodCall(expr) = source {
             // Given `foo.bar(baz)`, `expr` is `bar`, but we want to point to the whole thing.
             self.tcx.hir().expect_expr(self.tcx.hir().get_parent_node(expr.hir_id)).span
@@ -383,6 +385,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         err.emit();
                         return None;
                     } else {
+                        span_source = SpanSource::Span(item_name.span);
                         let mut err = struct_span_err!(
                             tcx.sess,
                             item_name.span,
@@ -400,7 +403,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                     item_name,
                                     actual,
                                     call,
-                                    SpanSource::Span(item_name.span),
+                                    span_source,
                                 );
                             }
                         }
