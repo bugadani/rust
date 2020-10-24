@@ -1254,7 +1254,11 @@ pub fn check_type_bounds<'tcx>(
                 let concrete_ty_bound = bound.subst(tcx, rebased_substs);
                 debug!("check_type_bounds: concrete_ty_bound = {:?}", concrete_ty_bound);
 
-                traits::Obligation::new(mk_cause(span), param_env, concrete_ty_bound)
+                traits::Obligation::new(
+                    mk_cause(SpanSource::Span(span)),
+                    param_env,
+                    concrete_ty_bound,
+                )
             })
             .collect();
         debug!("check_type_bounds: item_bounds={:?}", obligations);

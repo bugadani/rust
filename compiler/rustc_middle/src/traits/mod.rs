@@ -200,7 +200,7 @@ pub enum ObligationCauseCode<'tcx> {
     ItemObligation(DefId),
 
     /// Like `ItemObligation`, but with extra detail on the source of the obligation.
-    BindingObligation(DefId, Span),
+    BindingObligation(DefId, SpanSource),
 
     /// A type like `&'a T` is WF only if `T: 'a`.
     ReferenceOutlivesReferent(Ty<'tcx>),
@@ -227,7 +227,7 @@ pub enum ObligationCauseCode<'tcx> {
     /// Type of each variable must be `Sized`.
     VariableType(hir::HirId),
     /// Argument type must be `Sized`.
-    SizedArgumentType(Option<Span>),
+    SizedArgumentType(Option<SpanSource>),
     /// Return type must be `Sized`.
     SizedReturnType,
     /// Yield type must be `Sized`.
@@ -241,7 +241,7 @@ pub enum ObligationCauseCode<'tcx> {
     /// Types of fields (other than the last, except for packed structs) in a struct must be sized.
     FieldSized {
         adt_kind: AdtKind,
-        span: Span,
+        span_source: SpanSource,
         last: bool,
     },
 
@@ -284,7 +284,7 @@ pub enum ObligationCauseCode<'tcx> {
     /// Type error arising from type checking a pattern against an expected type.
     Pattern {
         /// The span of the scrutinee or type expression which caused the `root_ty` type.
-        span: Option<Span>,
+        span_source: Option<SpanSource>,
         /// The root expected type induced by a scrutinee or type expression.
         root_ty: Ty<'tcx>,
         /// Whether the `Span` came from an expression or a type expression.

@@ -597,17 +597,29 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         exp_found: Option<ty::error::ExpectedFound<Ty<'tcx>>>,
     ) {
         match cause.code {
-            ObligationCauseCode::Pattern { origin_expr: true, span: Some(span), root_ty } => {
+            ObligationCauseCode::Pattern {
+                origin_expr: true,
+                span_source: Some(span_source),
+                root_ty,
+            } => {
                 let ty = self.resolve_vars_if_possible(&root_ty);
                 if ty.is_suggestable() {
                     // don't show type `_`
-                    err.span_label(span, format!("this expression has type `{}`", ty));
+                    err.span_label(
+                        span_source.to_span(self.tcx),
+                        format!("this expression has type `{}`", ty),
+                    );
                 }
                 if let Some(ty::error::ExpectedFound { found, .. }) = exp_found {
                     if ty.is_box() && ty.boxed_ty() == found {
-                        if let Ok(snippet) = self.tcx.sess.source_map().span_to_snippet(span) {
+                        if let Ok(snippet) = self
+                            .tcx
+                            .sess
+                            .source_map()
+                            .span_to_snippet(span_source.to_span(self.tcx))
+                        {
                             err.span_suggestion(
-                                span,
+                                span_source.to_span(self.tcx),
                                 "consider dereferencing the boxed value",
                                 format!("*{}", snippet),
                                 Applicability::MachineApplicable,
@@ -616,8 +628,12 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                     }
                 }
             }
-            ObligationCauseCode::Pattern { origin_expr: false, span: Some(span), .. } => {
-                err.span_label(span, "expected due to this");
+            ObligationCauseCode::Pattern {
+                origin_expr: false,
+                span_source: Some(span_source),
+                ..
+            } => {
+                err.span_label(span_source.to_span(self.tcx), "expected due to this");
             }
             ObligationCauseCode::MatchExpressionArm(box MatchExpressionArmCause {
                 semi_span,
@@ -690,9 +706,9 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                     let outer_error_span = if any_multiline_arm {
                         // Cover just `match` and the scrutinee expression, not
                         // the entire match body, to reduce diagram noise.
-                        cause.span.shrink_to_lo().to(scrut_span)
+                        cause.span_source.to_span(self.tcx).shrink_to_lo().to(scrut_span)
                     } else {
-                        cause.span
+                        cause.span_source.to_span(self.tcx)
                     };
                     let msg = "`match` arms have incompatible types";
                     err.span_label(outer_error_span, msg);
@@ -1665,13 +1681,13 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                     debug!("suggest_await_on_expect_found: normalized={:?}", normalized_ty);
                     if ty::TyS::same_type(normalized_ty, exp_found.found) {
                         let span = if let ObligationCauseCode::Pattern {
-                            span,
+                            span_source,
                             origin_expr: _,
                             root_ty: _,
                         } = cause.code
                         {
                             // scrutinee's span
-                            span.unwrap_or(exp_span)
+                            span_source.map_or(exp_span, |source| source.to_span(self.tcx))
                         } else {
                             exp_span
                         };

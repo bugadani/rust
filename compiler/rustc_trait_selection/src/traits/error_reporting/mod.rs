@@ -1778,12 +1778,12 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
         err: &mut DiagnosticBuilder<'tcx>,
         obligation: &PredicateObligation<'tcx>,
     ) {
-        let (pred, item_def_id, span) =
+        let (pred, item_def_id, span_source) =
             match (obligation.predicate.skip_binders(), obligation.cause.code.peel_derives()) {
                 (
                     ty::PredicateAtom::Trait(pred, _),
-                    &ObligationCauseCode::BindingObligation(item_def_id, span),
-                ) => (pred, item_def_id, span),
+                    &ObligationCauseCode::BindingObligation(item_def_id, span_source),
+                ) => (pred, item_def_id, span_source),
                 _ => return,
             };
 
@@ -1798,6 +1798,7 @@ impl<'a, 'tcx> InferCtxtPrivExt<'tcx> for InferCtxt<'a, 'tcx> {
             Some(generics) => generics,
             None => return,
         };
+        let span = span_source.to_span(self.tcx);
         for param in generics.params {
             if param.span != span
                 || param.bounds.iter().any(|bound| {

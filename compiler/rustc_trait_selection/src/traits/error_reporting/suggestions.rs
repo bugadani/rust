@@ -22,7 +22,7 @@ use rustc_middle::ty::{
 };
 use rustc_middle::ty::{TypeAndMut, TypeckResults};
 use rustc_span::symbol::{kw, sym, Ident, Symbol};
-use rustc_span::{MultiSpan, Span, DUMMY_SP};
+use rustc_span::{MultiSpan, Span};
 use rustc_target::spec::abi;
 use std::fmt;
 
@@ -1752,11 +1752,12 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                     err.note(&msg);
                 }
             }
-            ObligationCauseCode::BindingObligation(item_def_id, span) => {
+            ObligationCauseCode::BindingObligation(item_def_id, span_source) => {
                 let item_name = tcx.def_path_str(item_def_id);
                 let msg = format!("required by this bound in `{}`", item_name);
                 if let Some(ident) = tcx.opt_item_name(item_def_id) {
                     let sm = tcx.sess.source_map();
+                    let span = span_source.to_span(self.tcx);
                     let same_line =
                         match (sm.lookup_line(ident.span.hi()), sm.lookup_line(span.lo())) {
                             (Ok(l), Ok(r)) => l.line == r.line,
@@ -1766,8 +1767,8 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         err.span_label(ident.span, "required by a bound in this");
                     }
                 }
-                if span != DUMMY_SP {
-                    err.span_label(span, &msg);
+                if span_source != SpanSource::DUMMY {
+                    err.span_label(span_source.to_span(self.tcx), &msg);
                 } else {
                     err.note(&msg);
                 }
@@ -1835,9 +1836,9 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                 }
             }
             ObligationCauseCode::SizedArgumentType(sp) => {
-                if let Some(span) = sp {
+                if let Some(span_source) = sp {
                     err.span_suggestion_verbose(
-                        span.shrink_to_lo(),
+                        span_source.to_span(self.tcx).shrink_to_lo(),
                         "function arguments must have a statically known size, borrowed types \
                          always have a known size",
                         "&".to_string(),
@@ -1867,7 +1868,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
             ObligationCauseCode::StructInitializerSized => {
                 err.note("structs must have a statically known size to be initialized");
             }
-            ObligationCauseCode::FieldSized { adt_kind: ref item, last, span } => {
+            ObligationCauseCode::FieldSized { adt_kind: ref item, last, span_source } => {
                 match *item {
                     AdtKind::Struct => {
                         if last {
@@ -1888,6 +1889,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                         err.note("no field of an enum variant may have a dynamically sized type");
                     }
                 }
+                let span = span_source.to_span(self.tcx);
                 err.help("change the field's type to have a statically known size");
                 err.span_suggestion(
                     span.shrink_to_lo(),

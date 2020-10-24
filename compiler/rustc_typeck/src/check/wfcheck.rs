@@ -508,7 +508,7 @@ fn check_type_defn<'tcx, F>(
                                 Some(i) => i,
                                 None => bug!(),
                             },
-                            span: field.span,
+                            span_source: SpanSource::Span(field.span),
                             last,
                         },
                     ),

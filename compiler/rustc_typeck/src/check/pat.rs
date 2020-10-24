@@ -86,7 +86,11 @@ struct TopInfo<'tcx> {
 
 impl<'tcx> FnCtxt<'_, 'tcx> {
     fn pattern_cause(&self, ti: TopInfo<'tcx>, cause_span: Span) -> ObligationCause<'tcx> {
-        let code = Pattern { span: ti.span, root_ty: ti.expected, origin_expr: ti.origin_expr };
+        let code = Pattern {
+            span_source: ti.span.map(SpanSource::Span),
+            root_ty: ti.expected,
+            origin_expr: ti.origin_expr,
+        };
         self.cause(cause_span, code)
     }
 

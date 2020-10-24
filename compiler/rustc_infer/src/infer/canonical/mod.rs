@@ -69,11 +69,10 @@ impl<'cx, 'tcx> InferCtxt<'cx, 'tcx> {
             .chain((0..canonical.max_universe.as_u32()).map(|_| self.create_next_universe()))
             .collect();
 
-        let canonical_inference_vars = self.instantiate_canonical_vars(
-            SpanSource::Span(span),
-            canonical.variables,
-            |ui| universes[ui],
-        );
+        let canonical_inference_vars =
+            self.instantiate_canonical_vars(SpanSource::Span(span), canonical.variables, |ui| {
+                universes[ui]
+            });
         let result = canonical.substitute(self.tcx, &canonical_inference_vars);
         (result, canonical_inference_vars)
     }
