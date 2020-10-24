@@ -24,7 +24,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             return Some(mt.ty);
         }
 
-        let ok = self.try_overloaded_deref(expr.span, oprnd_ty)?;
+        let ok = self.try_overloaded_deref(SpanSource::Span(expr.span), oprnd_ty)?;
         let method = self.register_infer_ok_obligations(ok);
         if let ty::Ref(region, _, hir::Mutability::Not) = method.sig.inputs()[0].kind() {
             self.apply_adjustments(
@@ -54,7 +54,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // autoderef that normal method probing does. They could likely be
         // consolidated.
 
-        let mut autoderef = self.autoderef(base_expr.span, base_ty);
+        let mut autoderef = self.autoderef(SpanSource::Span(base_expr.span), base_ty);
         let mut result = None;
         while result.is_none() && autoderef.next().is_some() {
             result = self.try_index_step(expr, base_expr, &autoderef, idx_ty);
@@ -104,7 +104,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 span_source: SpanSource::Span(base_expr.span),
             });
             let method =
-                self.try_overloaded_place_op(expr.span, self_ty, &[input_ty], PlaceOp::Index);
+                self.try_overloaded_place_op(SpanSource::Span(expr.span), self_ty, &[input_ty], PlaceOp::Index);
 
             let result = method.map(|ok| {
                 debug!("try_index_step: success, using overloaded indexing");
@@ -147,12 +147,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// `convert_place_derefs_to_mutable`.
     pub(super) fn try_overloaded_place_op(
         &self,
-        span: Span,
+        span_source: SpanSource,
         base_ty: Ty<'tcx>,
         arg_tys: &[Ty<'tcx>],
         op: PlaceOp,
     ) -> Option<InferOk<'tcx, MethodCallee<'tcx>>> {
-        debug!("try_overloaded_place_op({:?},{:?},{:?})", span, base_ty, op);
+        debug!("try_overloaded_place_op({:?},{:?},{:?})", span_source.to_span(self.tcx), base_ty, op);
 
         let (imm_tr, imm_op) = match op {
             PlaceOp::Deref => (self.tcx.lang_items().deref_trait(), sym::deref),
@@ -160,7 +160,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         };
         imm_tr.and_then(|trait_did| {
             self.lookup_method_in_trait(
-                span,
+                span_source.to_span(self.tcx),
                 Ident::with_dummy_span(imm_op),
                 trait_did,
                 base_ty,

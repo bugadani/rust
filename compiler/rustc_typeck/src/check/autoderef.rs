@@ -3,35 +3,35 @@ use super::method::MethodCallee;
 use super::{FnCtxt, PlaceOp};
 
 use rustc_infer::infer::InferOk;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::adjustment::{Adjust, Adjustment, OverloadedDeref};
 use rustc_middle::ty::{self, Ty};
-use rustc_span::Span;
 use rustc_trait_selection::autoderef::{Autoderef, AutoderefKind};
 
 use std::iter;
 
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
-    pub fn autoderef(&'a self, span: Span, base_ty: Ty<'tcx>) -> Autoderef<'a, 'tcx> {
-        Autoderef::new(self, self.param_env, self.body_id, span, base_ty, span)
+    pub fn autoderef(&'a self, span_source: SpanSource, base_ty: Ty<'tcx>) -> Autoderef<'a, 'tcx> {
+        Autoderef::new(self, self.param_env, self.body_id, span_source, base_ty, span_source)
     }
 
     /// Like `autoderef`, but provides a custom `Span` to use for calls to
     /// an overloaded `Deref` operator
     pub fn autoderef_overloaded_span(
         &'a self,
-        span: Span,
+        span_source: SpanSource,
         base_ty: Ty<'tcx>,
-        overloaded_span: Span,
+        overloaded_span_source: SpanSource,
     ) -> Autoderef<'a, 'tcx> {
-        Autoderef::new(self, self.param_env, self.body_id, span, base_ty, overloaded_span)
+        Autoderef::new(self, self.param_env, self.body_id, span_source, base_ty, overloaded_span_source)
     }
 
     pub fn try_overloaded_deref(
         &self,
-        span: Span,
+        span_source: SpanSource,
         base_ty: Ty<'tcx>,
     ) -> Option<InferOk<'tcx, MethodCallee<'tcx>>> {
-        self.try_overloaded_place_op(span, base_ty, &[], PlaceOp::Deref)
+        self.try_overloaded_place_op(span_source, base_ty, &[], PlaceOp::Deref)
     }
 
     /// Returns the adjustment steps.
@@ -51,7 +51,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             .iter()
             .map(|&(source, kind)| {
                 if let AutoderefKind::Overloaded = kind {
-                    self.try_overloaded_deref(autoderef.span(), source).and_then(
+                    self.try_overloaded_deref(autoderef.span_source(), source).and_then(
                         |InferOk { value: method, obligations: o }| {
                             obligations.extend(o);
                             if let ty::Ref(region, _, mutbl) = *method.sig.output().kind() {

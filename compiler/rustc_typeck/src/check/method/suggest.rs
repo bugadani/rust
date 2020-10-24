@@ -43,7 +43,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     Err(..) => return false,
                 };
 
-                self.autoderef(span, ty).any(|(ty, _)| {
+                self.autoderef(SpanSource::Span(span), ty).any(|(ty, _)| {
                     self.probe(|_| {
                         let fn_once_substs = tcx.mk_substs_trait(
                             ty,
@@ -456,9 +456,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the method name is the name of a field with a function or closure type,
                 // give a helping note that it has to be called as `(x.f)(...)`.
                 if let SelfSource::MethodCall(expr) = source {
-                    // FIXME autoderef
                     let field_receiver = self
-                        .autoderef(span_source.to_span(self.tcx), rcvr_ty)
+                        .autoderef(span_source, rcvr_ty)
                         .find_map(|(ty, _)| match ty.kind() {
                             ty::Adt(def, substs) if !def.is_enum() => {
                                 let variant = &def.non_enum_variant();
@@ -1287,7 +1286,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             return is_local(self.resolve_vars_with_obligations(rcvr_ty));
         }
 
-        self.autoderef(span, rcvr_ty).any(|(ty, _)| is_local(ty))
+        self.autoderef(SpanSource::Span(span), rcvr_ty).any(|(ty, _)| is_local(ty))
     }
 }
 

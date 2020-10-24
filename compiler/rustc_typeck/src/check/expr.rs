@@ -1523,7 +1523,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let expr_t = self.check_expr(base);
         let expr_t = self.structurally_resolved_type(SpanSource::Span(base.span), expr_t);
         let mut private_candidate = None;
-        let mut autoderef = self.autoderef(expr.span, expr_t);
+        let mut autoderef = self.autoderef(SpanSource::Span(expr.span), expr_t);
         while let Some((base_t, _)) = autoderef.next() {
             match base_t.kind() {
                 ty::Adt(base_def, substs) if !base_def.is_enum() => {

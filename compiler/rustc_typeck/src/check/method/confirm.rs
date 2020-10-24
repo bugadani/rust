@@ -139,7 +139,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
         // Commit the autoderefs by calling `autoderef` again, but this
         // time writing the results into the various typeck results.
         let mut autoderef =
-            self.autoderef_overloaded_span(self.span, unadjusted_self_ty, self.call_expr.span);
+            self.autoderef_overloaded_span(SpanSource::Span(self.span), unadjusted_self_ty, SpanSource::Span(self.call_expr.span));
         let (_, n) = match autoderef.nth(pick.autoderefs) {
             Some(n) => n,
             None => {
@@ -272,7 +272,7 @@ impl<'a, 'tcx> ConfirmContext<'a, 'tcx> {
 
         // FIXME: this feels, like, super dubious
         self.fcx
-            .autoderef(self.span, self_ty)
+            .autoderef(SpanSource::Span(self.span), self_ty)
             .include_raw_pointers()
             .find_map(|(ty, _)| match ty.kind() {
                 ty::Dynamic(ref data, ..) => Some(closure(

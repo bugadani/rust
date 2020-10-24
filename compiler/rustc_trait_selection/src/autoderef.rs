@@ -27,8 +27,8 @@ struct AutoderefSnapshot<'tcx> {
 pub struct Autoderef<'a, 'tcx> {
     // Meta infos:
     infcx: &'a InferCtxt<'a, 'tcx>,
-    span: Span,
-    overloaded_span: Span,
+    span_source: SpanSource,
+    overloaded_span_source: SpanSource,
     body_id: hir::HirId,
     param_env: ty::ParamEnv<'tcx>,
 
@@ -58,7 +58,7 @@ impl<'a, 'tcx> Iterator for Autoderef<'a, 'tcx> {
             if !self.silence_errors {
                 report_autoderef_recursion_limit_error(
                     tcx,
-                    SpanSource::Span(self.span),
+                    self.span_source,
                     self.state.cur_ty,
                 );
             }
@@ -102,14 +102,14 @@ impl<'a, 'tcx> Autoderef<'a, 'tcx> {
         infcx: &'a InferCtxt<'a, 'tcx>,
         param_env: ty::ParamEnv<'tcx>,
         body_id: hir::HirId,
-        span: Span,
+        span_source: SpanSource,
         base_ty: Ty<'tcx>,
-        overloaded_span: Span,
+        overloaded_span_source: SpanSource,
     ) -> Autoderef<'a, 'tcx> {
         Autoderef {
             infcx,
-            span,
-            overloaded_span,
+            span_source,
+            overloaded_span_source,
             body_id,
             param_env,
             state: AutoderefSnapshot {
@@ -135,7 +135,7 @@ impl<'a, 'tcx> Autoderef<'a, 'tcx> {
             substs: tcx.mk_substs_trait(ty, &[]),
         };
 
-        let cause = traits::ObligationCause::misc(self.span, self.body_id);
+        let cause = traits::ObligationCause::new(self.span_source, self.body_id, traits::ObligationCauseCode::MiscObligation);
 
         let obligation = traits::Obligation::new(
             cause.clone(),
@@ -195,11 +195,17 @@ impl<'a, 'tcx> Autoderef<'a, 'tcx> {
     }
 
     pub fn span(&self) -> Span {
-        self.span
+        // FIXME is this necessary? prefer using span_source
+        self.span_source.to_span(self.infcx.tcx)
+    }
+
+    pub fn span_source(&self) -> SpanSource {
+        self.span_source
     }
 
     pub fn overloaded_span(&self) -> Span {
-        self.overloaded_span
+        // FIXME is this necessary? prefer using span_source
+        self.overloaded_span_source.to_span(self.infcx.tcx)
     }
 
     pub fn reached_recursion_limit(&self) -> bool {

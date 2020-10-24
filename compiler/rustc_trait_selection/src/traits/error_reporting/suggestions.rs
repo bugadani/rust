@@ -472,7 +472,6 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         }
         let param_env = obligation.param_env;
         let body_id = obligation.cause.body_id;
-        let span = obligation.cause.span_source.to_span(self.tcx); // FIXME
         let real_trait_ref = match &obligation.cause.code {
             ObligationCauseCode::ImplDerivedObligation(cause)
             | ObligationCauseCode::DerivedObligation(cause)
@@ -485,7 +484,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         };
 
         if let ty::Ref(region, base_ty, mutbl) = *real_ty.kind() {
-            let mut autoderef = Autoderef::new(self, param_env, body_id, span, base_ty, span);
+            let mut autoderef = Autoderef::new(self, param_env, body_id, obligation.cause.span_source, base_ty, obligation.cause.span_source);
             if let Some(steps) = autoderef.find_map(|(ty, steps)| {
                 // Re-add the `&`
                 let ty = self.tcx.mk_ref(region, TypeAndMut { ty, mutbl });
@@ -494,13 +493,13 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
                 Some(steps).filter(|_| self.predicate_may_hold(&obligation))
             }) {
                 if steps > 0 {
-                    if let Ok(src) = self.tcx.sess.source_map().span_to_snippet(span) {
+                    if let Ok(src) = self.tcx.sess.source_map().span_to_snippet(obligation.cause.span_source.to_span(self.tcx)) {
                         // Don't care about `&mut` because `DerefMut` is used less
                         // often and user will not expect autoderef happens.
                         if src.starts_with('&') && !src.starts_with("&mut ") {
                             let derefs = "*".repeat(steps);
                             err.span_suggestion(
-                                span,
+                                obligation.cause.span_source.to_span(self.tcx),
                                 "consider adding dereference here",
                                 format!("&{}{}", derefs, &src[1..]),
                                 Applicability::MachineApplicable,

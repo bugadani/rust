@@ -69,7 +69,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let expr_ty =
             self.structurally_resolved_type(SpanSource::Span(call_expr.span), original_callee_ty);
 
-        let mut autoderef = self.autoderef(callee_expr.span, expr_ty);
+        let mut autoderef = self.autoderef(SpanSource::Span(callee_expr.span), expr_ty);
         let mut result = None;
         while result.is_none() && autoderef.next().is_some() {
             result = self.try_overloaded_call_step(call_expr, callee_expr, arg_exprs, &autoderef);

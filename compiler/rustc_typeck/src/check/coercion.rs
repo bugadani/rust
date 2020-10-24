@@ -267,7 +267,7 @@ impl<'f, 'tcx> Coerce<'f, 'tcx> {
 
         let mut first_error = None;
         let mut r_borrow_var = None;
-        let mut autoderef = self.autoderef(span_source.to_span(self.tcx), a);
+        let mut autoderef = self.autoderef(span_source, a);
         let mut found = None;
 
         for (referent_ty, autoderefs) in autoderef.by_ref() {
@@ -890,7 +890,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // We don't ever need two-phase here since we throw out the result of the coercion
         let coerce = Coerce::new(self, cause, AllowTwoPhase::No);
         coerce
-            .autoderef(rustc_span::DUMMY_SP, expr_ty)
+            .autoderef(SpanSource::DUMMY, expr_ty)
             .find_map(|(ty, steps)| self.probe(|_| coerce.unify(ty, target)).ok().map(|_| steps))
     }
 

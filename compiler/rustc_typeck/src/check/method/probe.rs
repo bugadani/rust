@@ -459,7 +459,7 @@ fn method_autoderef_steps<'tcx>(
         let ParamEnvAnd { param_env, value: self_ty } = goal;
 
         let mut autoderef =
-            Autoderef::new(infcx, param_env, hir::CRATE_HIR_ID, DUMMY_SP, self_ty, DUMMY_SP)
+            Autoderef::new(infcx, param_env, hir::CRATE_HIR_ID, SpanSource::DUMMY, self_ty, SpanSource::DUMMY)
                 .include_raw_pointers()
                 .silence_errors();
         let mut reached_raw_pointer = false;
