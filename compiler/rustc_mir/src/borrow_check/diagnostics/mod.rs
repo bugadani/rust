@@ -317,7 +317,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     fn append_local_to_string(&self, local: Local, buf: &mut String) -> Result<(), ()> {
         let decl = &self.body.local_decls[local];
         match self.local_names[local] {
-            Some(name) if !decl.from_compiler_desugaring() => {
+            Some(name) if !decl.from_compiler_desugaring(self.infcx.tcx) => {
                 buf.push_str(&name.as_str());
                 Ok(())
             }

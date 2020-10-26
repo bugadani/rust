@@ -272,9 +272,9 @@ struct TypeVerifier<'a, 'b, 'tcx> {
 }
 
 impl<'a, 'b, 'tcx> Visitor<'tcx> for TypeVerifier<'a, 'b, 'tcx> {
-    fn visit_span(&mut self, span: &Span) {
-        if !span.is_dummy() {
-            self.last_span_source = SpanSource::Span(*span);
+    fn visit_span(&mut self, span_source: &SpanSource) {
+        if !span_source.is_dummy() {
+            self.last_span_source = *span_source;
         }
     }
 

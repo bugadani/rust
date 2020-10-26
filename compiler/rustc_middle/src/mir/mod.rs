@@ -2,6 +2,7 @@
 //!
 //! [rustc dev guide]: https://rustc-dev-guide.rust-lang.org/mir/index.html
 
+use crate::middle::lang_items::SpanSource;
 use crate::mir::coverage::{CodeRegion, CoverageKind};
 use crate::mir::interpret::{Allocation, GlobalAlloc, Scalar};
 use crate::mir::visit::MirVisitable;
@@ -579,7 +580,7 @@ impl<'tcx, D: TyDecoder<'tcx>, T: Decodable<D>> Decodable<D> for ClearCrossCrate
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TyEncodable, TyDecodable, Hash, HashStable)]
 pub struct SourceInfo {
     /// The source span for the AST pertaining to this MIR entity.
-    pub span: Span,
+    pub span_source: SpanSource,
 
     /// The source scope, keeping track of which bindings can be
     /// seen by debuginfo, active lint levels, `unsafe {...}`, etc.
@@ -588,8 +589,8 @@ pub struct SourceInfo {
 
 impl SourceInfo {
     #[inline]
-    pub fn outermost(span: Span) -> Self {
-        SourceInfo { span, scope: OUTERMOST_SOURCE_SCOPE }
+    pub fn outermost(span_source: SpanSource) -> Self {
+        SourceInfo { span_source, scope: OUTERMOST_SOURCE_SCOPE }
     }
 }
 
@@ -1024,14 +1025,15 @@ impl<'tcx> LocalDecl<'tcx> {
     /// Returns `true` is the local is from a compiler desugaring, e.g.,
     /// `__next` from a `for` loop.
     #[inline]
-    pub fn from_compiler_desugaring(&self) -> bool {
-        self.source_info.span.desugaring_kind().is_some()
+    pub fn from_compiler_desugaring(&self, tcx: TyCtxt<'tcx>) -> bool {
+        self.source_info.span_source.to_span(tcx).desugaring_kind().is_some()
     }
 
     /// Creates a new `LocalDecl` for a temporary: mutable, non-internal.
     #[inline]
     pub fn new(ty: Ty<'tcx>, span: Span) -> Self {
-        Self::with_source_info(ty, SourceInfo::outermost(span))
+        // FIXME
+        Self::with_source_info(ty, SourceInfo::outermost(SpanSource::Span(span)))
     }
 
     /// Like `LocalDecl::new`, but takes a `SourceInfo` instead of a `Span`.
@@ -1263,7 +1265,10 @@ impl<'tcx> BasicBlockData<'tcx> {
         let mut gap = self.statements.len()..self.statements.len() + extra_stmts;
         self.statements.resize(
             gap.end,
-            Statement { source_info: SourceInfo::outermost(DUMMY_SP), kind: StatementKind::Nop },
+            Statement {
+                source_info: SourceInfo::outermost(SpanSource::DUMMY),
+                kind: StatementKind::Nop,
+            },
         );
         for (splice_start, new_stmts) in splices.into_iter().rev() {
             let splice_end = splice_start + new_stmts.size_hint().0;

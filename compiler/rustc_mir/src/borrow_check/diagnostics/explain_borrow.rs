@@ -118,7 +118,7 @@ impl BorrowExplanation {
                 };
 
                 match local_names[dropped_local] {
-                    Some(local_name) if !local_decl.from_compiler_desugaring() => {
+                    Some(local_name) if !local_decl.from_compiler_desugaring(tcx) => {
                         let message = format!(
                             "{B}borrow might be used here, when `{LOC}` is dropped \
                              and runs the {DTOR} for {TYPE}",

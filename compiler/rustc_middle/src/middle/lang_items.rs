@@ -15,7 +15,7 @@ use rustc_span::Span;
 use rustc_span::DUMMY_SP;
 use rustc_target::spec::PanicStrategy;
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, TyEncodable, TyDecodable, HashStable)]
 pub enum SpanSource {
     Span(Span),
     DefId(DefId),
@@ -30,6 +30,11 @@ impl SpanSource {
             SpanSource::Span(span) => span,
             SpanSource::DefId(def_id) => tcx.def_span(def_id),
         }
+    }
+
+    #[inline]
+    pub fn is_dummy(self) -> bool {
+        self == Self::DUMMY
     }
 }
 

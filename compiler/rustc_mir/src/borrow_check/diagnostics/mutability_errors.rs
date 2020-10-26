@@ -315,7 +315,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                 };
 
                 match self.local_names[local] {
-                    Some(name) if !local_decl.from_compiler_desugaring() => {
+                    Some(name) if !local_decl.from_compiler_desugaring(self.infcx.tcx) => {
                         let label = match local_decl.local_info.as_ref().unwrap() {
                             box LocalInfo::User(ClearCrossCrate::Set(
                                 mir::BindingForm::ImplicitSelf(_),
