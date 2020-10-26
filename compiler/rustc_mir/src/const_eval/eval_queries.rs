@@ -233,8 +233,11 @@ pub fn eval_to_const_value_raw_provider<'tcx>(
         };
         return eval_nullary_intrinsic(tcx, key.param_env, def_id, substs).map_err(|error| {
             // FIXME ConstEvalErr maybe doesn't need Span?
-            let error =
-                ConstEvalErr { error: error.kind, stacktrace: vec![], span: tcx.def_span(def_id) };
+            let error = ConstEvalErr {
+                error: error.kind,
+                stacktrace: vec![],
+                span: SpanSource::DefId(def_id),
+            };
             error.report_as_error(
                 tcx.at(SpanSource::DefId(def_id)),
                 "could not evaluate nullary intrinsic",
@@ -307,7 +310,7 @@ pub fn eval_to_allocation_raw_provider<'tcx>(
                 // Ensure that if the above error was either `TooGeneric` or `Reported`
                 // an error must be reported.
                 let v = err.report_as_error(
-                    ecx.tcx.at(SpanSource::Span(ecx.cur_span())),
+                    ecx.tcx.at(ecx.cur_span()),
                     "could not evaluate static initializer",
                 );
 
@@ -317,7 +320,7 @@ pub fn eval_to_allocation_raw_provider<'tcx>(
                 // succeed or we'll report this error then.
                 if key.param_env.reveal() == Reveal::All {
                     tcx.sess.delay_span_bug(
-                        err.span,
+                        err.span.to_span(*ecx.tcx),
                         &format!("static eval failure did not emit an error: {:#?}", v),
                     );
                 }
@@ -351,12 +354,12 @@ pub fn eval_to_allocation_raw_provider<'tcx>(
                             let span = tcx.promoted_mir_opt_const_arg(def.to_global())[p].span;
                             if let err_inval!(ReferencedConstant) = err.error {
                                 Err(err.report_as_error(
-                                    tcx.at(SpanSource::Span(span)),
+                                    tcx.at(span),
                                     "evaluation of constant expression failed",
                                 ))
                             } else {
                                 Err(err.report_as_lint(
-                                    tcx.at(SpanSource::Span(span)),
+                                    tcx.at(span),
                                     "reaching this expression at runtime will panic or abort",
                                     tcx.hir().local_def_id_to_hir_id(def.did),
                                     Some(err.span),
@@ -366,7 +369,7 @@ pub fn eval_to_allocation_raw_provider<'tcx>(
                         // reported as hard errors
                         } else {
                             Err(err.report_as_error(
-                                ecx.tcx.at(SpanSource::Span(ecx.cur_span())),
+                                ecx.tcx.at(ecx.cur_span()),
                                 "evaluation of constant value failed",
                             ))
                         }
@@ -374,10 +377,7 @@ pub fn eval_to_allocation_raw_provider<'tcx>(
                 }
             } else {
                 // use of broken constant from other crate
-                Err(err.report_as_error(
-                    ecx.tcx.at(SpanSource::Span(ecx.cur_span())),
-                    "could not evaluate constant",
-                ))
+                Err(err.report_as_error(ecx.tcx.at(ecx.cur_span()), "could not evaluate constant"))
             }
         }
         Ok(mplace) => {

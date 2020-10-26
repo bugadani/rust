@@ -2,6 +2,7 @@
 
 use crate::build::Builder;
 use crate::thir::*;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::CanonicalUserTypeAnnotation;
 
@@ -19,6 +20,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     fn expr_as_constant(&mut self, expr: Expr<'tcx>) -> Constant<'tcx> {
         let this = self;
         let Expr { ty, temp_lifetime: _, span, kind } = expr;
+        let span = SpanSource::Span(span);
         match kind {
             ExprKind::Scope { region_scope: _, lint_level: _, value } => this.as_constant(value),
             ExprKind::Literal { literal, user_ty, const_id: _ } => {
@@ -34,7 +36,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             }
             ExprKind::StaticRef { literal, .. } => Constant { span, user_ty: None, literal },
             ExprKind::ConstBlock { value } => Constant { span, user_ty: None, literal: value },
-            _ => span_bug!(span, "expression is not a valid constant {:?}", kind),
+            _ => span_bug!(span.to_span(this.hir.tcx()), "expression is not a valid constant {:?}", kind),
         }
     }
 }

@@ -305,12 +305,12 @@ use rustc_attr::{SignedInt, UnsignedInt};
 use rustc_errors::ErrorReported;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{HirId, RangeEnd};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::interpret::{truncate, AllocId, ConstValue, Pointer, Scalar};
 use rustc_middle::mir::Field;
 use rustc_middle::ty::layout::IntegerExt;
 use rustc_middle::ty::{self, Const, Ty, TyCtxt};
 use rustc_session::lint;
-use rustc_span::{Span, DUMMY_SP};
 use rustc_target::abi::{Integer, Size, VariantIdx};
 
 use smallvec::{smallvec, SmallVec};
@@ -1132,7 +1132,7 @@ impl<'tcx> Constructor<'tcx> {
             NonExhaustive => PatKind::Wild,
         };
 
-        Pat { ty, span: DUMMY_SP, kind: Box::new(pat) }
+        Pat { ty, span: SpanSource::DUMMY, kind: Box::new(pat) }
     }
 
     /// Like `apply`, but where all the subpatterns are wildcards `_`.
@@ -1404,7 +1404,7 @@ impl<'p, 'tcx> Fields<'p, 'tcx> {
 #[derive(Clone, Debug)]
 crate enum Usefulness<'tcx> {
     /// Carries a list of unreachable subpatterns. Used only in the presence of or-patterns.
-    Useful(Vec<Span>),
+    Useful(Vec<SpanSource>),
     /// Carries a list of witnesses of non-exhaustiveness.
     UsefulWithWitness(Vec<Witness<'tcx>>),
     NotUseful,
@@ -1499,7 +1499,7 @@ crate enum WitnessPreference {
 #[derive(Copy, Clone, Debug)]
 struct PatCtxt<'tcx> {
     ty: Ty<'tcx>,
-    span: Span,
+    span: SpanSource,
 }
 
 /// A witness of non-exhaustiveness for error reporting, represented
@@ -1710,7 +1710,7 @@ fn all_constructors<'a, 'tcx>(
 struct IntRange<'tcx> {
     range: RangeInclusive<u128>,
     ty: Ty<'tcx>,
-    span: Span,
+    span: SpanSource,
 }
 
 impl<'tcx> IntRange<'tcx> {
@@ -1754,7 +1754,7 @@ impl<'tcx> IntRange<'tcx> {
         tcx: TyCtxt<'tcx>,
         param_env: ty::ParamEnv<'tcx>,
         value: &Const<'tcx>,
-        span: Span,
+        span: SpanSource,
     ) -> Option<IntRange<'tcx>> {
         if let Some((target_size, bias)) = Self::integral_size_and_signed_bias(tcx, value.ty) {
             let ty = value.ty;
@@ -1785,7 +1785,7 @@ impl<'tcx> IntRange<'tcx> {
         hi: u128,
         ty: Ty<'tcx>,
         end: &RangeEnd,
-        span: Span,
+        span: SpanSource,
     ) -> Option<IntRange<'tcx>> {
         if Self::is_integral(ty) {
             // Perform a shift if the underlying types are signed,
@@ -1932,7 +1932,7 @@ impl<'tcx> IntRange<'tcx> {
         };
 
         // This is a brand new pattern, so we don't reuse `self.span`.
-        Pat { ty: self.ty, span: DUMMY_SP, kind: Box::new(kind) }
+        Pat { ty: self.ty, span: SpanSource::DUMMY, kind: Box::new(kind) }
     }
 }
 
@@ -2142,22 +2142,30 @@ crate fn is_useful<'p, 'tcx>(
 
         if missing_ctors.is_empty() {
             let (all_ctors, _) = missing_ctors.into_inner();
-            split_grouped_constructors(cx.tcx, cx.param_env, pcx, all_ctors, matrix, DUMMY_SP, None)
-                .into_iter()
-                .map(|c| {
-                    is_useful_specialized(
-                        cx,
-                        matrix,
-                        v,
-                        c,
-                        pcx.ty,
-                        witness_preference,
-                        hir_id,
-                        is_under_guard,
-                    )
-                })
-                .find(|result| result.is_useful())
-                .unwrap_or(NotUseful)
+            split_grouped_constructors(
+                cx.tcx,
+                cx.param_env,
+                pcx,
+                all_ctors,
+                matrix,
+                SpanSource::DUMMY,
+                None,
+            )
+            .into_iter()
+            .map(|c| {
+                is_useful_specialized(
+                    cx,
+                    matrix,
+                    v,
+                    c,
+                    pcx.ty,
+                    witness_preference,
+                    hir_id,
+                    is_under_guard,
+                )
+            })
+            .find(|result| result.is_useful())
+            .unwrap_or(NotUseful)
         } else {
             let matrix = matrix.specialize_wildcard();
             let v = v.to_tail();
@@ -2290,7 +2298,7 @@ fn pat_constructor<'tcx>(
             let array_len = match pat.ty.kind() {
                 ty::Array(_, length) => Some(length.eval_usize(tcx, param_env)),
                 ty::Slice(_) => None,
-                _ => span_bug!(pat.span, "bad ty {:?} for slice pattern", pat.ty),
+                _ => span_bug!(pat.span.to_span(tcx), "bad ty {:?} for slice pattern", pat.ty),
             };
             let prefix = prefix.len() as u64;
             let suffix = suffix.len() as u64;
@@ -2307,7 +2315,7 @@ fn pat_constructor<'tcx>(
 // second pattern to lint about unreachable match arms.
 fn slice_pat_covered_by_const<'tcx>(
     tcx: TyCtxt<'tcx>,
-    _span: Span,
+    _span: SpanSource,
     const_val: &'tcx ty::Const<'tcx>,
     prefix: &[Pat<'tcx>],
     slice: &Option<Pat<'tcx>>,
@@ -2414,7 +2422,7 @@ fn split_grouped_constructors<'p, 'tcx>(
     pcx: PatCtxt<'tcx>,
     ctors: Vec<Constructor<'tcx>>,
     matrix: &Matrix<'p, 'tcx>,
-    span: Span,
+    span: SpanSource,
     hir_id: Option<HirId>,
 ) -> Vec<Constructor<'tcx>> {
     let ty = pcx.ty;
@@ -2648,17 +2656,18 @@ fn lint_overlapping_patterns<'tcx>(
         tcx.struct_span_lint_hir(
             lint::builtin::OVERLAPPING_PATTERNS,
             hir_id,
-            ctor_range.span,
+            ctor_range.span.to_span(tcx),
             |lint| {
                 let mut err = lint.build("multiple patterns covering the same range");
-                err.span_label(ctor_range.span, "overlapping patterns");
+                err.span_label(ctor_range.span.to_span(tcx), "overlapping patterns");
                 for int_range in overlaps {
                     // Use the real type for user display of the ranges:
                     err.span_label(
-                        int_range.span,
+                        int_range.span.to_span(tcx),
                         &format!(
                             "this range overlaps on `{}`",
-                            IntRange { range: int_range.range, ty, span: DUMMY_SP }.to_pat(tcx),
+                            IntRange { range: int_range.range, ty, span: SpanSource::DUMMY }
+                                .to_pat(tcx),
                         ),
                     );
                 }
@@ -2761,7 +2770,7 @@ fn specialize_one_pattern<'p, 'tcx>(
                         ty::ConstKind::Value(ConstValue::ByRef { offset, alloc, .. }) => {
                             (Cow::Borrowed(alloc), offset, n, t)
                         }
-                        _ => span_bug!(pat.span, "array pattern is {:?}", value,),
+                        _ => span_bug!(pat.span.to_span(cx.tcx), "array pattern is {:?}", value,),
                     }
                 }
                 ty::Slice(t) => {
@@ -2776,14 +2785,14 @@ fn specialize_one_pattern<'p, 'tcx>(
                             return None;
                         }
                         _ => span_bug!(
-                            pat.span,
+                            pat.span.to_span(cx.tcx),
                             "slice pattern constant must be scalar pair but is {:?}",
                             value,
                         ),
                     }
                 }
                 _ => span_bug!(
-                    pat.span,
+                    pat.span.to_span(cx.tcx),
                     "unexpected const-val {:?} with ctor {:?}",
                     value,
                     constructor,
@@ -2865,7 +2874,11 @@ fn specialize_one_pattern<'p, 'tcx>(
                     Err(ErrorReported) => None,
                 }
             }
-            _ => span_bug!(pat.span, "unexpected ctor {:?} for slice pat", constructor),
+            _ => span_bug!(
+                pat.span.to_span(cx.tcx),
+                "unexpected ctor {:?} for slice pat",
+                constructor
+            ),
         },
 
         PatKind::Or { .. } => bug!("Or-pattern should have been expanded earlier on."),

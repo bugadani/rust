@@ -5,9 +5,9 @@ use crate::traits::{self, TraitEngine};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir as hir;
 use rustc_hir::lang_items::LangItem;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::query::Providers;
 use rustc_middle::ty::{self, AdtDef, Ty, TyCtxt, TypeFoldable, TypeVisitor};
-use rustc_span::Span;
 
 #[derive(Debug)]
 pub enum NonStructuralMatchTy<'tcx> {
@@ -48,7 +48,7 @@ pub enum NonStructuralMatchTy<'tcx> {
 /// Rust RFC 1445, rust-lang/rust#61188, and rust-lang/rust#62307.
 pub fn search_for_structural_match_violation<'tcx>(
     _id: hir::HirId,
-    span: Span,
+    span: SpanSource,
     tcx: TyCtxt<'tcx>,
     ty: Ty<'tcx>,
 ) -> Option<NonStructuralMatchTy<'tcx>> {
@@ -111,7 +111,7 @@ fn type_marked_structural(
 /// find instances of ADTs (specifically structs or enums) that do not implement
 /// the structural-match traits (`StructuralPartialEq` and `StructuralEq`).
 struct Search<'a, 'tcx> {
-    span: Span,
+    span: SpanSource,
 
     infcx: InferCtxt<'a, 'tcx>,
 
@@ -220,7 +220,10 @@ impl<'a, 'tcx> TypeVisitor<'tcx> for Search<'a, 'tcx> {
                 bug!("unexpected type during structural-match checking: {:?}", ty);
             }
             ty::Error(_) => {
-                self.tcx().sess.delay_span_bug(self.span, "ty::Error in structural-match check");
+                self.tcx().sess.delay_span_bug(
+                    self.span.to_span(self.infcx.tcx),
+                    "ty::Error in structural-match check",
+                );
                 // We still want to check other types after encountering an error,
                 // as this may still emit relevant errors.
                 //

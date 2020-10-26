@@ -5,6 +5,7 @@ use rustc_infer::infer::free_regions::FreeRegionRelations;
 use rustc_infer::infer::outlives;
 use rustc_infer::infer::region_constraints::GenericKind;
 use rustc_infer::infer::InferCtxt;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::ConstraintCategory;
 use rustc_middle::traits::query::OutlivesBound;
 use rustc_middle::ty::{self, RegionVid, Ty, TyCtxt};
@@ -297,7 +298,7 @@ impl UniversalRegionRelationsBuilder<'cx, 'tcx> {
                 &self.region_bound_pairs,
                 self.implicit_region_bound,
                 self.param_env,
-                Locations::All(DUMMY_SP),
+                Locations::All(SpanSource::DUMMY),
                 ConstraintCategory::Internal,
                 &mut self.constraints,
             )

@@ -2,7 +2,6 @@ use crate::middle::lang_items::SpanSource;
 use crate::mir::*;
 use crate::ty::subst::SubstsRef;
 use crate::ty::{CanonicalUserTypeAnnotation, Ty};
-use rustc_span::Span;
 
 // # The MIR Visitor
 //
@@ -245,7 +244,7 @@ macro_rules! make_mir_visitor {
                 if let Some(yield_ty) = &$($mutability)? body.yield_ty {
                     self.visit_ty(
                         yield_ty,
-                        TyContext::YieldTy(SourceInfo::outermost(SpanSource::Span(span)))
+                        TyContext::YieldTy(SourceInfo::outermost(span))
                     );
                 }
 
@@ -266,7 +265,7 @@ macro_rules! make_mir_visitor {
 
                 self.visit_ty(
                     &$($mutability)? body.return_ty(),
-                    TyContext::ReturnTy(SourceInfo::outermost(SpanSource::Span(body.span)))
+                    TyContext::ReturnTy(SourceInfo::outermost(body.span))
                 );
 
                 for local in body.local_decls.indices() {
@@ -288,7 +287,7 @@ macro_rules! make_mir_visitor {
                     self.visit_var_debug_info(var_debug_info);
                 }
 
-                self.visit_span(&$($mutability)? SpanSource::Span(body.span));
+                self.visit_span(&$($mutability)? body.span);
 
                 for const_ in &$($mutability)? body.required_consts {
                     let location = START_BLOCK.start_location();
@@ -325,7 +324,7 @@ macro_rules! make_mir_visitor {
                     local_data: _,
                 } = scope_data;
 
-                self.visit_span(&$($mutability)?SpanSource::Span(*span));
+                self.visit_span(span);
                 if let Some(parent_scope) = parent_scope {
                     self.visit_source_scope(parent_scope);
                 }
@@ -822,7 +821,7 @@ macro_rules! make_mir_visitor {
                     literal,
                 } = constant;
 
-                self.visit_span(& $($mutability)? SpanSource::Span(*span));
+                self.visit_span(span);
                 drop(user_ty); // no visit method for this
                 self.visit_const(literal, location);
             }
@@ -846,7 +845,7 @@ macro_rules! make_mir_visitor {
                 _index: UserTypeAnnotationIndex,
                 ty: & $($mutability)? CanonicalUserTypeAnnotation<'tcx>,
             ) {
-                self.visit_span(& $($mutability)? SpanSource::Span(ty.span));
+                self.visit_span(& $($mutability)? ty.span);
                 self.visit_ty(& $($mutability)? ty.inferred_ty, TyContext::UserTy(ty.span));
             }
 
@@ -1072,7 +1071,7 @@ pub enum TyContext {
     },
 
     /// The inferred type of a user type annotation.
-    UserTy(Span),
+    UserTy(SpanSource),
 
     /// The return type of the function.
     ReturnTy(SourceInfo),

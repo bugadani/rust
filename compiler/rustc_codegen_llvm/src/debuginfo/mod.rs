@@ -239,7 +239,7 @@ impl DebugInfoMethods<'tcx> for CodegenCx<'ll, 'tcx> {
             return None;
         }
 
-        let span = mir.span;
+        let span = mir.span.to_span(self.tcx);
 
         // This can be the case for functions inlined from another crate
         if span.is_dummy() {

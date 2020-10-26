@@ -29,8 +29,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         // closure, where `self` would be shadowed, it's easier to
         // just use the name `this` uniformly
         let this = self;
-        let expr_span = expr.span;
-        let source_info = this.source_info(SpanSource::Span(expr_span));
+        let expr_span = SpanSource::Span(expr.span);
+        let source_info = this.source_info(expr_span);
 
         let expr_is_block_or_scope = match expr.kind {
             ExprKind::Block { .. } => true,
@@ -55,7 +55,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 this.ast_block(destination, block, ast_block, source_info)
             }
             ExprKind::Match { scrutinee, arms } => {
-                this.match_expr(destination, SpanSource::Span(expr_span), block, scrutinee, arms)
+                this.match_expr(destination, expr_span, block, scrutinee, arms)
             }
             ExprKind::NeverToAny { source } => {
                 let source = this.hir.mirror(source);
@@ -145,31 +145,26 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 // Start the loop.
                 this.cfg.goto(block, source_info, loop_block);
 
-                this.in_breakable_scope(
-                    Some(loop_block),
-                    destination,
-                    SpanSource::Span(expr_span),
-                    move |this| {
-                        // conduct the test, if necessary
-                        let body_block = this.cfg.start_new_block();
-                        this.cfg.terminate(
-                            loop_block,
-                            source_info,
-                            TerminatorKind::FalseUnwind { real_target: body_block, unwind: None },
-                        );
-                        this.diverge_from(loop_block);
+                this.in_breakable_scope(Some(loop_block), destination, expr_span, move |this| {
+                    // conduct the test, if necessary
+                    let body_block = this.cfg.start_new_block();
+                    this.cfg.terminate(
+                        loop_block,
+                        source_info,
+                        TerminatorKind::FalseUnwind { real_target: body_block, unwind: None },
+                    );
+                    this.diverge_from(loop_block);
 
-                        // The “return” value of the loop body must always be an unit. We therefore
-                        // introduce a unit temporary as the destination for the loop body.
-                        let tmp = this.get_unit_temp();
-                        // Execute the body, branching back to the test.
-                        let body_block_end = unpack!(this.into(tmp, body_block, body));
-                        this.cfg.goto(body_block_end, source_info, loop_block);
+                    // The “return” value of the loop body must always be an unit. We therefore
+                    // introduce a unit temporary as the destination for the loop body.
+                    let tmp = this.get_unit_temp();
+                    // Execute the body, branching back to the test.
+                    let body_block_end = unpack!(this.into(tmp, body_block, body));
+                    this.cfg.goto(body_block_end, source_info, loop_block);
 
-                        // Loops are only exited by `break` expressions.
-                        None
-                    },
-                )
+                    // Loops are only exited by `break` expressions.
+                    None
+                })
             }
             ExprKind::Call { ty, fun, args, from_hir_call, fn_span } => {
                 let intrinsic = match *ty.kind() {
@@ -231,7 +226,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                 Some((destination, success))
                             },
                             from_hir_call,
-                            fn_span,
+                            fn_span: SpanSource::Span(fn_span),
                         },
                     );
                     this.diverge_from(block);
@@ -303,7 +298,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let inferred_ty = expr.ty;
                 let user_ty = user_ty.map(|ty| {
                     this.canonical_user_type_annotations.push(CanonicalUserTypeAnnotation {
-                        span: source_info.span_source.to_span(this.hir.tcx()),
+                        span: source_info.span_source,
                         user_ty: ty,
                         inferred_ty,
                     })

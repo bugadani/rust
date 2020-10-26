@@ -56,9 +56,7 @@ impl std::ops::Deref for CheckLiveDrops<'mir, 'tcx> {
 
 impl CheckLiveDrops<'mir, 'tcx> {
     fn check_live_drop(&self, span_source: SpanSource) {
-        ops::LiveDrop { dropped_at: None }
-            .build_error(self.ccx, span_source.to_span(self.tcx))
-            .emit();
+        ops::LiveDrop { dropped_at: None }.build_error(self.ccx, span_source).emit();
     }
 }
 

@@ -1,8 +1,8 @@
 use rustc_data_structures::graph;
 use rustc_index::vec::IndexVec;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::ConstraintCategory;
 use rustc_middle::ty::RegionVid;
-use rustc_span::DUMMY_SP;
 
 use crate::borrow_check::{
     constraints::OutlivesConstraintIndex,
@@ -155,7 +155,7 @@ impl<'s, D: ConstraintGraphDirecton> Iterator for Edges<'s, D> {
             Some(OutlivesConstraint {
                 sup: self.static_region,
                 sub: next_static_idx.into(),
-                locations: Locations::All(DUMMY_SP),
+                locations: Locations::All(SpanSource::DUMMY),
                 category: ConstraintCategory::Internal,
             })
         } else {

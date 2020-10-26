@@ -83,7 +83,7 @@ impl<'tcx> Visitor<'tcx> for MatchVisitor<'_, 'tcx> {
 }
 
 impl PatCtxt<'_, '_> {
-    fn report_inlining_errors(&self, pat_span: Span) {
+    fn report_inlining_errors(&self, pat_span: SpanSource) {
         for error in &self.errors {
             match *error {
                 PatternError::StaticInPattern(span) => {
@@ -98,14 +98,14 @@ impl PatCtxt<'_, '_> {
                 PatternError::FloatBug => {
                     // FIXME(#31407) this is only necessary because float parsing is buggy
                     rustc_middle::mir::interpret::struct_error(
-                        self.tcx.at(SpanSource::Span(pat_span)),
+                        self.tcx.at(pat_span),
                         "could not evaluate float literal (see issue #31407)",
                     )
                     .emit();
                 }
                 PatternError::NonConstPath(span) => {
                     rustc_middle::mir::interpret::struct_error(
-                        self.tcx.at(SpanSource::Span(span)),
+                        self.tcx.at(span),
                         "runtime values cannot be referenced in patterns",
                     )
                     .emit();
@@ -114,8 +114,8 @@ impl PatCtxt<'_, '_> {
         }
     }
 
-    fn span_e0158(&self, span: Span, text: &str) {
-        struct_span_err!(self.tcx.sess, span, E0158, "{}", text).emit();
+    fn span_e0158(&self, span: SpanSource, text: &str) {
+        struct_span_err!(self.tcx.sess, span.to_span(self.tcx), E0158, "{}", text).emit();
     }
 }
 
@@ -141,7 +141,7 @@ impl<'tcx> MatchVisitor<'_, 'tcx> {
         let pattern: &_ = cx.pattern_arena.alloc(expand_pattern(cx, pattern));
         if !patcx.errors.is_empty() {
             *have_errors = true;
-            patcx.report_inlining_errors(pat.span);
+            patcx.report_inlining_errors(SpanSource::Span(pat.span));
         }
         (pattern, pattern_ty)
     }
@@ -332,20 +332,20 @@ fn pat_is_catchall(pat: &super::Pat<'_>) -> bool {
     }
 }
 
-fn unreachable_pattern(tcx: TyCtxt<'_>, span: Span, id: HirId, catchall: Option<Span>) {
-    tcx.struct_span_lint_hir(UNREACHABLE_PATTERNS, id, span, |lint| {
+fn unreachable_pattern(tcx: TyCtxt<'_>, span: SpanSource, id: HirId, catchall: Option<SpanSource>) {
+    tcx.struct_span_lint_hir(UNREACHABLE_PATTERNS, id, span.to_span(tcx), |lint| {
         let mut err = lint.build("unreachable pattern");
         if let Some(catchall) = catchall {
             // We had a catchall pattern, hint at that.
-            err.span_label(span, "unreachable pattern");
-            err.span_label(catchall, "matches any value");
+            err.span_label(span.to_span(tcx), "unreachable pattern");
+            err.span_label(catchall.to_span(tcx), "matches any value");
         }
         err.emit();
     });
 }
 
-fn irrefutable_let_pattern(tcx: TyCtxt<'_>, span: Span, id: HirId, source: hir::MatchSource) {
-    tcx.struct_span_lint_hir(IRREFUTABLE_LET_PATTERNS, id, span, |lint| {
+fn irrefutable_let_pattern(tcx: TyCtxt<'_>, span: SpanSource, id: HirId, source: hir::MatchSource) {
+    tcx.struct_span_lint_hir(IRREFUTABLE_LET_PATTERNS, id, span.to_span(tcx), |lint| {
         let msg = match source {
             hir::MatchSource::IfLetDesugar { .. } => "irrefutable if-let pattern",
             hir::MatchSource::WhileLetDesugar => "irrefutable while-let pattern",

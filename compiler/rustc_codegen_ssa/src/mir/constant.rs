@@ -1,10 +1,10 @@
 use crate::mir::operand::OperandRef;
 use crate::traits::*;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{ConstValue, ErrorHandled};
 use rustc_middle::ty::layout::HasTyCtxt;
 use rustc_middle::ty::{self, Ty};
-use rustc_span::source_map::Span;
 use rustc_target::abi::Abi;
 
 use super::FunctionCx;
@@ -31,16 +31,16 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 .const_eval_resolve(ty::ParamEnv::reveal_all(), def, substs, promoted, None)
                 .map_err(|err| {
                     if promoted.is_none() {
-                        self.cx
-                            .tcx()
-                            .sess
-                            .span_err(constant.span, "erroneous constant encountered");
+                        self.cx.tcx().sess.span_err(
+                            constant.span.to_span(self.cx.tcx()),
+                            "erroneous constant encountered",
+                        );
                     }
                     err
                 }),
             ty::ConstKind::Value(value) => Ok(value),
             err => span_bug!(
-                constant.span,
+                constant.span.to_span(self.cx.tcx()),
                 "encountered bad ConstKind after monomorphizing: {:?}",
                 err
             ),
@@ -51,7 +51,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
     pub fn simd_shuffle_indices(
         &mut self,
         bx: &Bx,
-        span: Span,
+        span: SpanSource,
         ty: Ty<'tcx>,
         constant: Result<ConstValue<'tcx>, ErrorHandled>,
     ) -> (Bx::Value, Ty<'tcx>) {
@@ -81,7 +81,10 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 (llval, c.ty)
             })
             .unwrap_or_else(|_| {
-                bx.tcx().sess.span_err(span, "could not evaluate shuffle_indices at compile time");
+                bx.tcx().sess.span_err(
+                    span.to_span(bx.tcx()),
+                    "could not evaluate shuffle_indices at compile time",
+                );
                 // We've errored, so we don't have to produce working code.
                 let ty = self.monomorphize(&ty);
                 let llty = bx.backend_type(bx.layout_of(ty));

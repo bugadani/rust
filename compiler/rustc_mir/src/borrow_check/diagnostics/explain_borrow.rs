@@ -200,7 +200,7 @@ impl BorrowExplanation {
                 ref opt_place_desc,
                 from_closure: _,
             } => {
-                region_name.highlight_region_name(err);
+                region_name.highlight_region_name(tcx, err);
 
                 if let Some(desc) = opt_place_desc {
                     err.span_label(
@@ -514,7 +514,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         match use_spans {
             UseSpans::ClosureUse { var_span, .. } => {
                 // Used in a closure.
-                (LaterUseKind::ClosureCapture, SpanSource::Span(var_span))
+                (LaterUseKind::ClosureCapture, var_span)
             }
             UseSpans::PatUse(span)
             | UseSpans::OtherUse(span)
@@ -535,17 +535,17 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                     {
                         // Just point to the function, to reduce the chance of overlapping spans.
                         let function_span = match func {
-                            Operand::Constant(c) => SpanSource::Span(c.span),
+                            Operand::Constant(c) => c.span,
                             Operand::Copy(place) | Operand::Move(place) => {
                                 if let Some(l) = place.as_local() {
                                     let local_decl = &self.body.local_decls[l];
                                     if self.local_names[l].is_none() {
                                         local_decl.source_info.span_source
                                     } else {
-                                        SpanSource::Span(span)
+                                        span
                                     }
                                 } else {
-                                    SpanSource::Span(span)
+                                    span
                                 }
                             }
                         };
@@ -557,7 +557,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                     LaterUseKind::Other
                 };
 
-                (kind, SpanSource::Span(span))
+                (kind, span)
             }
         }
     }

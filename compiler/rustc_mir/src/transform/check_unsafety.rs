@@ -5,7 +5,6 @@ use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::hir_id::HirId;
 use rustc_hir::intravisit;
 use rustc_hir::Node;
-use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::{MutatingUseContext, PlaceContext, Visitor};
 use rustc_middle::mir::*;
 use rustc_middle::ty::cast::CastTy;
@@ -53,7 +52,7 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
             const_context,
             min_const_fn,
             violations: vec![],
-            source_info: SourceInfo::outermost(SpanSource::Span(body.span)),
+            source_info: SourceInfo::outermost(body.span),
             tcx,
             param_env,
             used_unsafe: Default::default(),

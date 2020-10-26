@@ -28,7 +28,7 @@ use rustc_index::bit_set::BitMatrix;
 use rustc_index::vec::{Idx, IndexVec};
 use rustc_serialize::{Decodable, Encodable};
 use rustc_span::symbol::Symbol;
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::Span;
 use rustc_target::abi;
 use rustc_target::asm::InlineAsmRegOrRegClass;
 use std::borrow::Cow;
@@ -205,7 +205,7 @@ pub struct Body<'tcx> {
     pub var_debug_info: Vec<VarDebugInfo<'tcx>>,
 
     /// A span representing this MIR, for error reporting.
-    pub span: Span,
+    pub span: SpanSource,
 
     /// Constants that are required to evaluate successfully for this MIR to be well-formed.
     /// We hold in this field all the constants we are not able to evaluate yet.
@@ -250,7 +250,7 @@ impl<'tcx> Body<'tcx> {
         user_type_annotations: ty::CanonicalUserTypeAnnotations<'tcx>,
         arg_count: usize,
         var_debug_info: Vec<VarDebugInfo<'tcx>>,
-        span: Span,
+        span: SpanSource,
         generator_kind: Option<GeneratorKind>,
     ) -> Self {
         // We need `arg_count` locals, and one for the return place.
@@ -303,7 +303,7 @@ impl<'tcx> Body<'tcx> {
             user_type_annotations: IndexVec::new(),
             arg_count: 0,
             spread_arg: None,
-            span: DUMMY_SP,
+            span: SpanSource::DUMMY,
             required_consts: Vec::new(),
             generator_kind: None,
             var_debug_info: Vec::new(),
@@ -718,16 +718,16 @@ pub struct VarBindingForm<'tcx> {
     /// NOTE: if you want to change this to a `HirId`, be wary that
     /// doing so breaks incremental compilation (as of this writing),
     /// while a `Span` does not cause our tests to fail.
-    pub opt_ty_info: Option<Span>,
+    pub opt_ty_info: Option<SpanSource>,
     /// Place of the RHS of the =, or the subject of the `match` where this
     /// variable is initialized. None in the case of `let PATTERN;`.
     /// Some((None, ..)) in the case of and `let [mut] x = ...` because
     /// (a) the right-hand side isn't evaluated as a place expression.
     /// (b) it gives a way to separate this case from the remaining cases
     ///     for diagnostics.
-    pub opt_match_place: Option<(Option<Place<'tcx>>, Span)>,
+    pub opt_match_place: Option<(Option<Place<'tcx>>, SpanSource)>,
     /// The span of the pattern in which this variable was bound.
-    pub pat_span: Span,
+    pub pat_span: SpanSource,
 }
 
 #[derive(Clone, Debug, TyEncodable, TyDecodable)]
@@ -1871,7 +1871,7 @@ rustc_index::newtype_index! {
 
 #[derive(Clone, Debug, TyEncodable, TyDecodable, HashStable)]
 pub struct SourceScopeData {
-    pub span: Span,
+    pub span: SpanSource,
     pub parent_scope: Option<SourceScope>,
 
     /// Crate-local information for this source scope, that can't (and
@@ -1930,7 +1930,7 @@ impl<'tcx> Operand<'tcx> {
         tcx: TyCtxt<'tcx>,
         def_id: DefId,
         substs: SubstsRef<'tcx>,
-        span: Span,
+        span: SpanSource,
     ) -> Self {
         let ty = tcx.type_of(def_id).subst(tcx, substs);
         Operand::Constant(box Constant {
@@ -1950,7 +1950,7 @@ impl<'tcx> Operand<'tcx> {
         tcx: TyCtxt<'tcx>,
         ty: Ty<'tcx>,
         val: Scalar,
-        span: Span,
+        span: SpanSource,
     ) -> Operand<'tcx> {
         debug_assert!({
             let param_env_and_ty = ty::ParamEnv::empty().and(ty);
@@ -2294,7 +2294,7 @@ impl<'tcx> Debug for Rvalue<'tcx> {
 
 #[derive(Clone, Copy, PartialEq, TyEncodable, TyDecodable, HashStable)]
 pub struct Constant<'tcx> {
-    pub span: Span,
+    pub span: SpanSource,
 
     /// Optional user-given type: for something like
     /// `collect::<Vec<_>>`, this would be present and would
@@ -2355,7 +2355,7 @@ impl Constant<'tcx> {
 /// &'static str`.
 #[derive(Clone, Debug, TyEncodable, TyDecodable, HashStable, TypeFoldable)]
 pub struct UserTypeProjections {
-    pub contents: Vec<(UserTypeProjection, Span)>,
+    pub contents: Vec<(UserTypeProjection, SpanSource)>,
 }
 
 impl<'tcx> UserTypeProjections {
@@ -2369,7 +2369,7 @@ impl<'tcx> UserTypeProjections {
 
     pub fn projections_and_spans(
         &self,
-    ) -> impl Iterator<Item = &(UserTypeProjection, Span)> + ExactSizeIterator {
+    ) -> impl Iterator<Item = &(UserTypeProjection, SpanSource)> + ExactSizeIterator {
         self.contents.iter()
     }
 
@@ -2377,7 +2377,7 @@ impl<'tcx> UserTypeProjections {
         self.contents.iter().map(|&(ref user_type, _span)| user_type)
     }
 
-    pub fn push_projection(mut self, user_ty: &UserTypeProjection, span: Span) -> Self {
+    pub fn push_projection(mut self, user_ty: &UserTypeProjection, span: SpanSource) -> Self {
         self.contents.push((user_ty.clone(), span));
         self
     }

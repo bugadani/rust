@@ -10,7 +10,6 @@ use rustc_target::abi::VariantIdx;
 
 use rustc_index::vec::{Idx, IndexVec};
 
-use rustc_span::Span;
 use rustc_target::spec::abi::Abi;
 
 use std::fmt;
@@ -167,7 +166,7 @@ fn build_drop_shim<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId, ty: Option<Ty<'tcx>>)
         blocks,
         local_decls_for_sig(&sig, SpanSource::DefId(def_id)),
         sig.inputs().len(),
-        tcx.def_span(def_id), // FIXME
+        SpanSource::DefId(def_id),
     );
 
     if let Some(..) = ty {
@@ -211,7 +210,7 @@ fn new_body<'tcx>(
     basic_blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
     local_decls: IndexVec<Local, LocalDecl<'tcx>>,
     arg_count: usize,
-    span: Span,
+    span: SpanSource,
 ) -> Body<'tcx> {
     Body::new(
         source,
@@ -300,8 +299,7 @@ fn build_clone_shim<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId, self_ty: Ty<'tcx>) -
     let param_env = tcx.param_env(def_id);
 
     let mut builder = CloneShimBuilder::new(tcx, def_id, self_ty);
-    // FIXME def_id?
-    let is_copy = self_ty.is_copy_modulo_regions(tcx.at(SpanSource::Span(builder.span)), param_env);
+    let is_copy = self_ty.is_copy_modulo_regions(tcx.at(builder.span), param_env);
 
     let dest = Place::return_place();
     let src = tcx.mk_place_deref(Place::from(Local::new(1 + 0)));
@@ -327,7 +325,7 @@ struct CloneShimBuilder<'tcx> {
     def_id: DefId,
     local_decls: IndexVec<Local, LocalDecl<'tcx>>,
     blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
-    span: Span,
+    span: SpanSource,
     sig: ty::FnSig<'tcx>,
 }
 
@@ -345,7 +343,7 @@ impl CloneShimBuilder<'tcx> {
             def_id,
             local_decls: local_decls_for_sig(&sig, SpanSource::DefId(def_id)),
             blocks: IndexVec::new(),
-            span: tcx.def_span(def_id), // FIXME
+            span: SpanSource::DefId(def_id),
             sig,
         }
     }
@@ -359,7 +357,7 @@ impl CloneShimBuilder<'tcx> {
     }
 
     fn source_info(&self) -> SourceInfo {
-        SourceInfo::outermost(SpanSource::Span(self.span))
+        SourceInfo::outermost(self.span)
     }
 
     fn block(
@@ -399,7 +397,7 @@ impl CloneShimBuilder<'tcx> {
 
     fn make_place(&mut self, mutability: Mutability, ty: Ty<'tcx>) -> Place<'tcx> {
         let span = self.span;
-        let mut local = LocalDecl::new(ty, SpanSource::Span(span));
+        let mut local = LocalDecl::new(ty, span);
         if mutability == Mutability::Not {
             local = local.immutable();
         }
@@ -488,7 +486,7 @@ impl CloneShimBuilder<'tcx> {
         let tcx = self.tcx;
         let span = self.span;
 
-        let beg = self.local_decls.push(LocalDecl::new(tcx.types.usize, SpanSource::Span(span)));
+        let beg = self.local_decls.push(LocalDecl::new(tcx.types.usize, span));
         let end = self.make_place(Mutability::Not, tcx.types.usize);
 
         // BB #0
@@ -543,7 +541,7 @@ impl CloneShimBuilder<'tcx> {
         // `let mut beg = 0;`
         // goto #6;
         let end = beg;
-        let beg = self.local_decls.push(LocalDecl::new(tcx.types.usize, SpanSource::Span(span)));
+        let beg = self.local_decls.push(LocalDecl::new(tcx.types.usize, span));
         let init = self.make_statement(StatementKind::Assign(box (
             Place::from(beg),
             Rvalue::Use(Operand::Constant(self.make_usize(0))),
@@ -758,7 +756,7 @@ fn build_call_shim<'tcx>(
             let ty = tcx.type_of(def_id);
             (
                 Operand::Constant(box Constant {
-                    span: source_info.span_source.to_span(tcx), //FIXME
+                    span: source_info.span_source,
                     user_ty: None,
                     literal: ty::Const::zero_sized(tcx, ty),
                 }),
@@ -814,7 +812,7 @@ fn build_call_shim<'tcx>(
                 None
             },
             from_hir_call: true,
-            fn_span: source_info.span_source.to_span(tcx),
+            fn_span: source_info.span_source,
         },
         false,
     );
@@ -848,7 +846,7 @@ fn build_call_shim<'tcx>(
         blocks,
         local_decls,
         sig.inputs().len(),
-        source_info.span_source.to_span(tcx),
+        source_info.span_source,
     );
 
     if let Abi::RustCall = sig.abi {
@@ -863,7 +861,7 @@ pub fn build_adt_ctor(tcx: TyCtxt<'_>, ctor_id: DefId) -> Body<'_> {
 
     let span =
         tcx.hir().span_if_local(ctor_id).unwrap_or_else(|| bug!("no span for ctor {:?}", ctor_id));
-
+    let span = SpanSource::Span(span);
     let param_env = tcx.param_env(ctor_id);
 
     // Normalize the sig.
@@ -877,9 +875,9 @@ pub fn build_adt_ctor(tcx: TyCtxt<'_>, ctor_id: DefId) -> Body<'_> {
 
     debug!("build_ctor: ctor_id={:?} sig={:?}", ctor_id, sig);
 
-    let local_decls = local_decls_for_sig(&sig, SpanSource::Span(span));
+    let local_decls = local_decls_for_sig(&sig, span);
 
-    let source_info = SourceInfo::outermost(SpanSource::Span(span));
+    let source_info = SourceInfo::outermost(span);
 
     let variant_index = if adt_def.is_enum() {
         adt_def.variant_index_with_ctor_id(ctor_id)

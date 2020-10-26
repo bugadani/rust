@@ -610,8 +610,8 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         debug!("propagate_constraints()");
 
         debug!("propagate_constraints: constraints={:#?}", {
-            let mut constraints: Vec<_> = self.constraints.outlives().iter().collect();
-            constraints.sort();
+            let constraints: Vec<_> = self.constraints.outlives().iter().collect();
+            //constraints.sort();
             constraints
                 .into_iter()
                 .map(|c| (c, self.constraint_sccs.scc(c.sup), self.constraint_sccs.scc(c.sub)))
@@ -1754,7 +1754,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         constraint: &OutlivesConstraint,
     ) -> (ConstraintCategory, bool, SpanSource) {
         let loc = match constraint.locations {
-            Locations::All(span) => return (constraint.category, false, SpanSource::Span(span)),
+            Locations::All(span) => return (constraint.category, false, span),
             Locations::Single(loc) => loc,
         };
 
@@ -1867,7 +1867,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                 let constraint = OutlivesConstraint {
                     sup: r,
                     sub: constraint.min_choice,
-                    locations: Locations::All(p_c.definition_span),
+                    locations: Locations::All(SpanSource::Span(p_c.definition_span)),
                     category: ConstraintCategory::OpaqueType,
                 };
                 handle_constraint(constraint);

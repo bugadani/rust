@@ -1,9 +1,9 @@
 use crate::borrow_check::Upvar;
 use crate::borrow_check::{nll::ToRegionVid, region_infer::RegionInferenceContext};
 use rustc_index::vec::{Idx, IndexVec};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::{Body, Local};
 use rustc_middle::ty::{RegionVid, TyCtxt};
-use rustc_span::source_map::Span;
 use rustc_span::symbol::Symbol;
 
 impl<'tcx> RegionInferenceContext<'tcx> {
@@ -14,7 +14,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         local_names: &IndexVec<Local, Option<Symbol>>,
         upvars: &[Upvar],
         fr: RegionVid,
-    ) -> Option<(Option<Symbol>, Span)> {
+    ) -> Option<(Option<Symbol>, SpanSource)> {
         debug!("get_var_name_and_span_for_region(fr={:?})", fr);
         assert!(self.universal_regions().is_universal_region(fr));
 
@@ -27,7 +27,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             .or_else(|| {
                 debug!("get_var_name_and_span_for_region: attempting argument");
                 self.get_argument_index_for_region(tcx, fr).map(|index| {
-                    self.get_argument_name_and_span_for_region(tcx, body, local_names, index)
+                    self.get_argument_name_and_span_for_region(body, local_names, index)
                 })
             })
     }
@@ -61,7 +61,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         tcx: TyCtxt<'tcx>,
         upvars: &[Upvar],
         upvar_index: usize,
-    ) -> (Symbol, Span) {
+    ) -> (Symbol, SpanSource) {
         let upvar_hir_id = upvars[upvar_index].var_hir_id;
         debug!("get_upvar_name_and_span_for_region: upvar_hir_id={:?}", upvar_hir_id);
 
@@ -72,7 +72,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             upvar_name, upvar_span
         );
 
-        (upvar_name, upvar_span)
+        (upvar_name, SpanSource::Span(upvar_span))
     }
 
     /// Search the argument types for one that references fr (which should be a free region).
@@ -108,17 +108,16 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// declared.
     crate fn get_argument_name_and_span_for_region(
         &self,
-        tcx: TyCtxt<'tcx>,
         body: &Body<'tcx>,
         local_names: &IndexVec<Local, Option<Symbol>>,
         argument_index: usize,
-    ) -> (Option<Symbol>, Span) {
+    ) -> (Option<Symbol>, SpanSource) {
         let implicit_inputs = self.universal_regions().defining_ty.implicit_inputs();
         let argument_local = Local::new(implicit_inputs + argument_index + 1);
         debug!("get_argument_name_and_span_for_region: argument_local={:?}", argument_local);
 
         let argument_name = local_names[argument_local];
-        let argument_span = body.local_decls[argument_local].source_info.span_source.to_span(tcx);
+        let argument_span = body.local_decls[argument_local].source_info.span_source;
         debug!(
             "get_argument_name_and_span_for_region: argument_name={:?} argument_span={:?}",
             argument_name, argument_span

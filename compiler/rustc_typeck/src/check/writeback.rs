@@ -60,7 +60,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         wbcx.visit_closures();
         wbcx.visit_liberated_fn_sigs();
         wbcx.visit_fru_field_types();
-        wbcx.visit_opaque_types(body.value.span);
+        wbcx.visit_opaque_types(SpanSource::Span(body.value.span));
         wbcx.visit_coercion_casts();
         wbcx.visit_user_provided_tys();
         wbcx.visit_user_provided_sigs();
@@ -430,7 +430,7 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
             fcx_typeck_results.generator_interior_types.clone();
     }
 
-    fn visit_opaque_types(&mut self, span: Span) {
+    fn visit_opaque_types(&mut self, span: SpanSource) {
         for (&def_id, opaque_defn) in self.fcx.opaque_types.borrow().iter() {
             let hir_id = self.tcx().hir().local_def_id_to_hir_id(def_id.expect_local());
             let instantiated_ty = self.resolve(&opaque_defn.concrete_ty, &hir_id);
@@ -486,7 +486,7 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
                     if let Some(old) = old {
                         if old.concrete_type != definition_ty || old.substs != opaque_defn.substs {
                             span_bug!(
-                                span,
+                                span.to_span(self.tcx()),
                                 "`visit_opaque_types` tried to write different types for the same \
                                  opaque type: {:?}, {:?}, {:?}, {:?}",
                                 def_id,
@@ -498,7 +498,10 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
                     }
                 }
             } else {
-                self.tcx().sess.delay_span_bug(span, "`opaque_defn` has inference variables");
+                self.tcx().sess.delay_span_bug(
+                    span.to_span(self.tcx()),
+                    "`opaque_defn` has inference variables",
+                );
             }
         }
     }

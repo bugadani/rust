@@ -1,4 +1,5 @@
 use crate::mir::interpret::Scalar;
+use crate::mir::SpanSource;
 use crate::ty::{self, Ty, TyCtxt};
 use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use smallvec::{smallvec, SmallVec};
@@ -189,7 +190,7 @@ pub enum TerminatorKind<'tcx> {
         from_hir_call: bool,
         /// This `Span` is the span of the function, without the dot and receiver
         /// (e.g. `foo(a, b)` in `x.foo(a, b)`
-        fn_span: Span,
+        fn_span: SpanSource,
     },
 
     /// Jump to the target if the condition has the expected value,

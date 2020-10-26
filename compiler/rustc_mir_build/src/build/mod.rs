@@ -780,7 +780,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             self.canonical_user_type_annotations,
             self.arg_count,
             self.var_debug_info,
-            self.fn_span,
+            SpanSource::Span(self.fn_span), // FIXME
             self.generator_kind,
         )
     }
@@ -907,7 +907,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 self.set_correct_source_scope_for_arg(
                     arg.hir_id,
                     original_source_scope,
-                    SpanSource::Span(span),
+                    span,
                 );
                 match *pattern.kind {
                     // Don't introduce extra copies for simple bindings
@@ -929,7 +929,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             Some(box LocalInfo::User(ClearCrossCrate::Set(BindingForm::Var(
                                 VarBindingForm {
                                     binding_mode,
-                                    opt_ty_info,
+                                    opt_ty_info: opt_ty_info.map(SpanSource::Span),
                                     opt_match_place: Some((Some(place), span)),
                                     pat_span: span,
                                 },
@@ -943,7 +943,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             SpanSource::Span(ast_body.span),
                             &pattern,
                             matches::ArmHasGuard(false),
-                            Some((Some(&place), SpanSource::Span(span))),
+                            Some((Some(&place), span)),
                         );
                         unpack!(block = self.place_into_pattern(block, pattern, place, false));
                     }

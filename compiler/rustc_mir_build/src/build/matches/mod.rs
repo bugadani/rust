@@ -21,7 +21,6 @@ use rustc_middle::middle::region;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty};
 use rustc_span::symbol::Symbol;
-use rustc_span::Span;
 use rustc_target::abi::VariantIdx;
 use smallvec::{smallvec, SmallVec};
 
@@ -367,19 +366,19 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let place = self.storage_live_binding(
                     block,
                     var,
-                    SpanSource::Span(irrefutable_pat.span),
+                    irrefutable_pat.span,
                     OutsideGuard,
                     true,
                 );
                 unpack!(block = self.into(place, block, initializer));
 
                 // Inject a fake read, see comments on `FakeReadCause::ForLet`.
-                let source_info = self.source_info(SpanSource::Span(irrefutable_pat.span));
+                let source_info = self.source_info(irrefutable_pat.span);
                 self.cfg.push_fake_read(block, source_info, FakeReadCause::ForLet, place);
 
                 self.schedule_drop_for_binding(
                     var,
-                    SpanSource::Span(irrefutable_pat.span),
+                    irrefutable_pat.span,
                     OutsideGuard,
                 );
                 block.unit()
@@ -411,22 +410,22 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let place = self.storage_live_binding(
                     block,
                     var,
-                    SpanSource::Span(irrefutable_pat.span),
+                    irrefutable_pat.span,
                     OutsideGuard,
                     true,
                 );
                 unpack!(block = self.into(place, block, initializer));
 
                 // Inject a fake read, see comments on `FakeReadCause::ForLet`.
-                let pattern_source_info = self.source_info(SpanSource::Span(irrefutable_pat.span));
+                let pattern_source_info = self.source_info(irrefutable_pat.span);
                 let cause_let = FakeReadCause::ForLet;
                 self.cfg.push_fake_read(block, pattern_source_info, cause_let, place);
 
-                let ty_source_info = self.source_info(SpanSource::Span(user_ty_span));
+                let ty_source_info = self.source_info(user_ty_span);
                 let user_ty = pat_ascription_ty.user_ty(
                     &mut self.canonical_user_type_annotations,
                     place.ty(&self.local_decls, self.hir.tcx()).ty,
-                    ty_source_info.span_source.to_span(self.hir.tcx()),
+                    ty_source_info.span_source,
                 );
                 self.cfg.push(
                     block,
@@ -455,7 +454,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
                 self.schedule_drop_for_binding(
                     var,
-                    SpanSource::Span(irrefutable_pat.span),
+                    irrefutable_pat.span,
                     OutsideGuard,
                 );
                 block.unit()
@@ -479,7 +478,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
         let fake_borrow_temps = self.lower_match_tree(
             block,
-            SpanSource::Span(irrefutable_pat.span),
+            irrefutable_pat.span,
             false,
             &mut [&mut candidate],
         );
@@ -512,11 +511,11 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
 
         self.bind_pattern(
-            self.source_info(SpanSource::Span(irrefutable_pat.span)),
+            self.source_info(irrefutable_pat.span),
             candidate,
             None,
             &fake_borrow_temps,
-            SpanSource::Span(irrefutable_pat.span),
+            irrefutable_pat.span,
             None,
         )
         .unit()
@@ -544,7 +543,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         Some(this.new_source_scope(scope_span, LintLevel::Inherited, None));
                 }
                 let source_info =
-                    SourceInfo { span_source: SpanSource::Span(span), scope: this.source_scope };
+                    SourceInfo { span_source: span, scope: this.source_scope };
                 let visibility_scope = visibility_scope.unwrap();
                 this.declare_binding(
                     source_info,
@@ -606,7 +605,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             Symbol,
             BindingMode,
             HirId,
-            Span,
+            SpanSource,
             Ty<'tcx>,
             UserTypeProjections,
         ),
@@ -715,7 +714,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 #[derive(Debug)]
 struct Candidate<'pat, 'tcx> {
     /// `Span` of the original pattern that gave rise to this candidate
-    span: Span,
+    span: SpanSource,
 
     /// This `Candidate` has a guard.
     has_guard: bool,
@@ -792,7 +791,7 @@ fn traverse_candidate<'pat, 'tcx: 'pat, C, T, I>(
 
 #[derive(Clone, Debug)]
 struct Binding<'tcx> {
-    span: Span,
+    span: SpanSource,
     source: Place<'tcx>,
     name: Symbol,
     var_id: HirId,
@@ -806,7 +805,7 @@ struct Binding<'tcx> {
 /// influence region inference.
 #[derive(Clone, Debug)]
 struct Ascription<'tcx> {
-    span: Span,
+    span: SpanSource,
     source: Place<'tcx>,
     user_ty: PatTyProj<'tcx>,
     variance: ty::Variance,
@@ -866,7 +865,7 @@ enum TestKind<'tcx> {
 
 #[derive(Debug)]
 crate struct Test<'tcx> {
-    span: Span,
+    span: SpanSource,
     kind: TestKind<'tcx>,
 }
 
@@ -1207,7 +1206,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         leaf_candidate,
                         &mut otherwise,
                         pats,
-                        SpanSource::Span(or_span),
+                        or_span,
                         place,
                         fake_borrows,
                     );
@@ -1623,7 +1622,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
         debug_assert!(candidate.match_pairs.is_empty());
 
-        let candidate_source_info = self.source_info(SpanSource::Span(candidate.span));
+        let candidate_source_info = self.source_info(candidate.span);
 
         let mut block = candidate.pre_binding_block.unwrap();
 
@@ -1847,7 +1846,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         'tcx: 'b,
     {
         for ascription in ascriptions {
-            let source_info = self.source_info(SpanSource::Span(ascription.span));
+            let source_info = self.source_info(ascription.span);
 
             debug!(
                 "adding user ascription at span {:?} of place {:?} and {:?}",
@@ -1859,7 +1858,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             let user_ty = ascription.user_ty.clone().user_ty(
                 &mut self.canonical_user_type_annotations,
                 ascription.source.ty(&self.local_decls, self.hir.tcx()).ty,
-                source_info.span_source.to_span(self.hir.tcx()), //FIXME
+                source_info.span_source,
             );
             self.cfg.push(
                 block,
@@ -1890,7 +1889,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let re_erased = self.hir.tcx().lifetimes.re_erased;
         for binding in bindings {
             debug!("bind_matched_candidate_for_guard(binding={:?})", binding);
-            let source_info = self.source_info(SpanSource::Span(binding.span));
+            let source_info = self.source_info(binding.span);
 
             // For each pattern ident P of type T, `ref_for_guard` is
             // a reference R: &T pointing to the location matched by
@@ -1899,7 +1898,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             let ref_for_guard = self.storage_live_binding(
                 block,
                 binding.var_id,
-                SpanSource::Span(binding.span),
+                binding.span,
                 RefWithinGuard,
                 schedule_drops,
             );
@@ -1912,7 +1911,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     let value_for_arm = self.storage_live_binding(
                         block,
                         binding.var_id,
-                        SpanSource::Span(binding.span),
+                        binding.span,
                         OutsideGuard,
                         schedule_drops,
                     );
@@ -1939,18 +1938,18 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let re_erased = self.hir.tcx().lifetimes.re_erased;
         // Assign each of the bindings. This may trigger moves out of the candidate.
         for binding in bindings {
-            let source_info = self.source_info(SpanSource::Span(binding.span));
+            let source_info = self.source_info(binding.span);
             let local = self.storage_live_binding(
                 block,
                 binding.var_id,
-                SpanSource::Span(binding.span),
+                binding.span,
                 OutsideGuard,
                 schedule_drops,
             );
             if schedule_drops {
                 self.schedule_drop_for_binding(
                     binding.var_id,
-                    SpanSource::Span(binding.span),
+                    binding.span,
                     OutsideGuard,
                 );
             }
@@ -1981,7 +1980,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         user_ty: UserTypeProjections,
         has_guard: ArmHasGuard,
         opt_match_place: Option<(Option<Place<'tcx>>, SpanSource)>,
-        pat_span: Span,
+        pat_span: SpanSource,
     ) {
         debug!(
             "declare_binding(var_id={:?}, name={:?}, mode={:?}, var_ty={:?}, \
@@ -2012,7 +2011,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     // idents in pat; but complex w/ unclear UI payoff.
                     // Instead, just abandon providing diagnostic info.
                     opt_ty_info: None,
-                    opt_match_place: opt_match_place.map(|(o, span)| (o, span.to_span(tcx))),
+                    opt_match_place,
                     pat_span,
                 },
             )))),

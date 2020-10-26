@@ -5,6 +5,7 @@ use rustc_infer::infer::{
     error_reporting::nice_region_error::NiceRegionError,
     error_reporting::unexpected_hidden_region_diagnostic, NLLRegionVariableOrigin,
 };
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::{ConstraintCategory, ReturnConstraint};
 use rustc_middle::ty::subst::Subst;
 use rustc_middle::ty::{self, RegionVid, Ty};
@@ -402,7 +403,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
         }
 
         if let Some(fr_span) = self.give_region_a_name(*outlived_fr).unwrap().span() {
-            diag.span_label(fr_span, "inferred to be a `FnMut` closure");
+            diag.span_label(fr_span.to_span(self.infcx.tcx), "inferred to be a `FnMut` closure");
         }
 
         diag.note(
@@ -463,12 +464,15 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
             });
         }
 
-        let mut diag =
-            borrowck_errors::borrowed_data_escapes_closure(self.infcx.tcx, *span, escapes_from);
+        let mut diag = borrowck_errors::borrowed_data_escapes_closure(
+            self.infcx.tcx,
+            SpanSource::Span(*span),
+            escapes_from,
+        );
 
         if let Some((Some(outlived_fr_name), outlived_fr_span)) = outlived_fr_name_and_span {
             diag.span_label(
-                outlived_fr_span,
+                outlived_fr_span.to_span(self.infcx.tcx),
                 format!(
                     "`{}` declared here, outside of the {} body",
                     outlived_fr_name, escapes_from
@@ -478,7 +482,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
 
         if let Some((Some(fr_name), fr_span)) = fr_name_and_span {
             diag.span_label(
-                fr_span,
+                fr_span.to_span(self.infcx.tcx),
                 format!(
                     "`{}` is a reference that is only valid in the {} body",
                     fr_name, escapes_from
@@ -516,17 +520,16 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
             category,
             ..
         } = errci;
+        let tcx = self.infcx.tcx;
 
-        let mut diag =
-            self.infcx.tcx.sess.struct_span_err(*span, "lifetime may not live long enough");
+        let mut diag = tcx.sess.struct_span_err(*span, "lifetime may not live long enough");
 
-        let (_, mir_def_name) =
-            self.infcx.tcx.article_and_description(self.mir_def_id().to_def_id());
+        let (_, mir_def_name) = tcx.article_and_description(self.mir_def_id().to_def_id());
 
         let fr_name = self.give_region_a_name(*fr).unwrap();
-        fr_name.highlight_region_name(&mut diag);
+        fr_name.highlight_region_name(tcx, &mut diag);
         let outlived_fr_name = self.give_region_a_name(*outlived_fr).unwrap();
-        outlived_fr_name.highlight_region_name(&mut diag);
+        outlived_fr_name.highlight_region_name(tcx, &mut diag);
 
         match (category, outlived_fr_is_local, fr_is_local) {
             (ConstraintCategory::Return(_), true, _) => {

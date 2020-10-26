@@ -449,7 +449,7 @@ impl Inliner<'tcx> {
                     // FIXME(eddyb) this doesn't seem right at all.
                     // The inlined source scopes should probably be annotated as
                     // such, but also contain all of the original information.
-                    scope.span = callsite.location.span_source.to_span(self.tcx); // FIXME
+                    scope.span = callsite.location.span_source;
 
                     let idx = caller_body.source_scopes.push(scope);
                     scope_map.push(idx);

@@ -153,7 +153,7 @@ pub trait InferCtxtExt<'tcx> {
         def_id: DefId,
         substs: SubstsRef<'tcx>,
         instantiated_ty: Ty<'tcx>,
-        span: Span,
+        span: SpanSource,
     ) -> Ty<'tcx>;
 }
 
@@ -645,7 +645,7 @@ impl<'a, 'tcx> InferCtxtExt<'tcx> for InferCtxt<'a, 'tcx> {
         def_id: DefId,
         substs: SubstsRef<'tcx>,
         instantiated_ty: Ty<'tcx>,
-        span: Span,
+        span: SpanSource,
     ) -> Ty<'tcx> {
         debug!(
             "infer_opaque_definition_from_instantiation(def_id={:?}, instantiated_ty={:?})",
@@ -773,7 +773,7 @@ struct ReverseMapper<'tcx> {
     hidden_ty: Option<Ty<'tcx>>,
 
     /// Span of function being checked.
-    span: Span,
+    span: SpanSource,
 }
 
 impl ReverseMapper<'tcx> {
@@ -783,7 +783,7 @@ impl ReverseMapper<'tcx> {
         opaque_type_def_id: DefId,
         map: FxHashMap<GenericArg<'tcx>, GenericArg<'tcx>>,
         hidden_ty: Ty<'tcx>,
-        span: Span,
+        span: SpanSource,
     ) -> Self {
         Self {
             tcx,
@@ -863,9 +863,12 @@ impl TypeFolder<'tcx> for ReverseMapper<'tcx> {
             None => {
                 self.tcx
                     .sess
-                    .struct_span_err(self.span, "non-defining opaque type use in defining scope")
+                    .struct_span_err(
+                        self.span.to_span(self.tcx),
+                        "non-defining opaque type use in defining scope",
+                    )
                     .span_label(
-                        self.span,
+                        self.span.to_span(self.tcx),
                         format!(
                             "lifetime `{}` is part of concrete type but not used in \
                                  parameter list of the `impl Trait` type alias",
@@ -946,7 +949,7 @@ impl TypeFolder<'tcx> for ReverseMapper<'tcx> {
                         self.tcx
                             .sess
                             .struct_span_err(
-                                self.span,
+                                self.span.to_span(self.tcx),
                                 &format!(
                                     "type parameter `{}` is part of concrete type but not \
                                           used in parameter list for the `impl Trait` type alias",
@@ -979,7 +982,7 @@ impl TypeFolder<'tcx> for ReverseMapper<'tcx> {
                         self.tcx
                             .sess
                             .struct_span_err(
-                                self.span,
+                                self.span.to_span(self.tcx),
                                 &format!(
                                     "const parameter `{}` is part of concrete type but not \
                                           used in parameter list for the `impl Trait` type alias",

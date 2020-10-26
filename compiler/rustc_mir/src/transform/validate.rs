@@ -438,7 +438,7 @@ impl<'a, 'tcx> Visitor<'tcx> for TypeChecker<'a, 'tcx> {
     fn visit_source_scope(&mut self, scope: &SourceScope) {
         if self.body.source_scopes.get(*scope).is_none() {
             self.tcx.sess.diagnostic().delay_span_bug(
-                self.body.span,
+                self.body.span.to_span(self.tcx),
                 &format!(
                     "broken MIR in {:?} ({}):\ninvalid source scope {:?}",
                     self.body.source.instance, self.when, scope,

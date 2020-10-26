@@ -455,13 +455,7 @@ impl<'a, 'b, 'tcx> TypeVerifier<'a, 'b, 'tcx> {
         body: &'b Body<'tcx>,
         promoted: &'b IndexVec<Promoted, Body<'tcx>>,
     ) -> Self {
-        TypeVerifier {
-            body,
-            promoted,
-            cx,
-            last_span_source: SpanSource::Span(body.span),
-            errors_reported: false,
-        }
+        TypeVerifier { body, promoted, cx, last_span_source: body.span, errors_reported: false }
     }
 
     fn tcx(&self) -> TyCtxt<'tcx> {
@@ -892,7 +886,7 @@ impl MirTypeckRegionConstraints<'tcx> {
 /// required to hold. Normally, this is at a particular point which
 /// created the obligation, but for constraints that the user gave, we
 /// want the constraint to hold at all points.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Locations {
     /// Indicates that a type constraint should always be true. This
     /// is particularly important in the new borrowck analysis for
@@ -929,7 +923,7 @@ pub enum Locations {
     /// The span points to the place the constraint arose. For example,
     /// it points to the type in a user-given type annotation. If
     /// there's no sensible span then it's DUMMY_SP.
-    All(Span),
+    All(SpanSource),
 
     /// An outlives constraint that only has to hold at a single location,
     /// usually it represents a point where references flow from one spot to
@@ -948,7 +942,7 @@ impl Locations {
     /// Gets a span representing the location.
     pub fn span(&self, body: &Body<'_>) -> SpanSource {
         match self {
-            Locations::All(span) => SpanSource::Span(*span),
+            Locations::All(span) => *span,
             Locations::Single(l) => body.source_info(*l).span_source,
         }
     }
@@ -989,9 +983,8 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
         );
         for user_annotation in self.user_type_annotations {
             let CanonicalUserTypeAnnotation { span, ref user_ty, inferred_ty } = *user_annotation;
-            let (annotation, _) = self
-                .infcx
-                .instantiate_canonical_with_fresh_inference_vars(SpanSource::Span(span), user_ty);
+            let (annotation, _) =
+                self.infcx.instantiate_canonical_with_fresh_inference_vars(span, user_ty);
             match annotation {
                 UserType::Ty(mut ty) => {
                     ty = self.normalize(ty, Locations::All(span));
@@ -1284,7 +1277,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                             None => {
                                 if !concrete_is_opaque {
                                     tcx.sess.delay_span_bug(
-                                        body.span,
+                                        body.span.to_span(tcx),
                                         &format!(
                                             "Non-defining use of {:?} with revealed type",
                                             opaque_def_id,
@@ -1504,7 +1497,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     place_ty,
                     variance,
                     projection,
-                    Locations::All(stmt.source_info.span_source.to_span(tcx)),
+                    Locations::All(stmt.source_info.span_source),
                     ConstraintCategory::TypeAnnotation,
                 ) {
                     let annotation = &self.user_type_annotations[projection.base];
@@ -2747,7 +2740,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
     }
 
     fn typeck_mir(&mut self, body: &Body<'tcx>) {
-        self.last_span_source = SpanSource::Span(body.span);
+        self.last_span_source = body.span;
         debug!("run_on_mir: {:?}", body.span);
 
         for (local, local_decl) in body.local_decls.iter_enumerated() {

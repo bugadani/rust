@@ -126,14 +126,14 @@ pub struct Frame<'mir, 'tcx, Tag = (), Extra = ()> {
     /// this frame (can happen e.g. during frame initialization, and during unwinding on
     /// frames without cleanup code).
     /// We basically abuse `Result` as `Either`.
-    pub(super) loc: Result<mir::Location, Span>,
+    pub(super) loc: Result<mir::Location, SpanSource>,
 }
 
 /// What we store about a frame in an interpreter backtrace.
 #[derive(Debug)]
 pub struct FrameInfo<'tcx> {
     pub instance: ty::Instance<'tcx>,
-    pub span: Span,
+    pub span: SpanSource,
     pub lint_root: Option<hir::HirId>,
 }
 
@@ -237,7 +237,7 @@ impl<'mir, 'tcx, Tag, Extra> Frame<'mir, 'tcx, Tag, Extra> {
     pub fn current_span(&self) -> SpanSource {
         match self.loc {
             Ok(loc) => self.body.source_info(loc).span_source,
-            Err(span) => SpanSource::Span(span), // FIXME
+            Err(span) => span,
         }
     }
 }
@@ -253,7 +253,7 @@ impl<'tcx> fmt::Display for FrameInfo<'tcx> {
                 write!(f, "inside `{}`", self.instance)?;
             }
             if !self.span.is_dummy() {
-                let lo = tcx.sess.source_map().lookup_char_pos(self.span.lo());
+                let lo = tcx.sess.source_map().lookup_char_pos(self.span.to_span(tcx).lo());
                 write!(f, " at {}:{}:{}", lo.file.name, lo.line, lo.col.to_usize() + 1)?;
             }
             Ok(())
@@ -372,11 +372,8 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     }
 
     #[inline(always)]
-    pub fn cur_span(&self) -> Span {
-        self.stack()
-            .last()
-            .map(|f| f.current_span().to_span(self.tcx.tcx))
-            .unwrap_or(self.tcx.span())
+    pub fn cur_span(&self) -> SpanSource {
+        self.stack().last().map(|f| f.current_span()).unwrap_or(self.tcx.span_source)
     }
 
     #[inline(always)]
@@ -608,7 +605,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                             return Ok(None);
                         } else {
                             span_bug!(
-                                self.cur_span(),
+                                self.cur_span().to_span(*self.tcx),
                                 "Fields cannot be extern types, unless they are at offset 0"
                             )
                         }
@@ -658,7 +655,11 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
 
             ty::Foreign(_) => Ok(None),
 
-            _ => span_bug!(self.cur_span(), "size_and_align_of::<{:?}> not supported", layout.ty),
+            _ => span_bug!(
+                self.cur_span().to_span(*self.tcx),
+                "size_and_align_of::<{:?}> not supported",
+                layout.ty
+            ),
         }
     }
     #[inline]
@@ -935,11 +936,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
             });
             let span = frame.current_span();
 
-            frames.push(FrameInfo {
-                span: span.to_span(self.tcx.tcx), // FIXME
-                instance: frame.instance,
-                lint_root,
-            });
+            frames.push(FrameInfo { span, instance: frame.instance, lint_root });
         }
         trace!("generate stacktrace: {:#?}", frames);
         frames

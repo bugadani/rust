@@ -3,6 +3,7 @@ use crate::thir::cx::Cx;
 use crate::thir::{self, *};
 
 use rustc_hir as hir;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::region;
 use rustc_middle::ty;
 
@@ -73,7 +74,7 @@ fn mirror_stmts<'a, 'tcx>(
                             kind: Box::new(PatKind::AscribeUserType {
                                 ascription: thir::pattern::Ascription {
                                     user_ty: PatTyProj::from_user_type(user_ty),
-                                    user_ty_span: ty.span,
+                                    user_ty_span: SpanSource::Span(ty.span),
                                     variance: ty::Variance::Covariant,
                                 },
                                 subpattern: pattern,

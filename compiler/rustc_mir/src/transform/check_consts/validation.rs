@@ -180,7 +180,7 @@ pub struct Validator<'mir, 'tcx> {
     qualifs: Qualifs<'mir, 'tcx>,
 
     /// The span of the current statement.
-    span: Span,
+    span: SpanSource,
 
     error_emitted: bool,
     secondary_errors: Vec<Diagnostic>,
@@ -212,7 +212,8 @@ impl Validator<'mir, 'tcx> {
         // `async` functions cannot be `const fn`. This is checked during AST lowering, so there's
         // no need to emit duplicate errors here.
         if is_async_fn(self.ccx) || body.generator_kind.is_some() {
-            tcx.sess.delay_span_bug(body.span, "`async` functions cannot be `const fn`");
+            tcx.sess
+                .delay_span_bug(body.span.to_span(tcx), "`async` functions cannot be `const fn`");
             return;
         }
 
@@ -224,8 +225,8 @@ impl Validator<'mir, 'tcx> {
                 let hir_id = tcx.hir().local_def_id_to_hir_id(def_id);
                 if crate::const_eval::is_parent_const_impl_raw(tcx, hir_id) {
                     struct_span_err!(
-                        self.ccx.tcx.sess,
-                        self.span,
+                        tcx.sess,
+                        self.span.to_span(tcx),
                         E0723,
                         "trait methods cannot be stable const fn"
                     )
@@ -241,13 +242,13 @@ impl Validator<'mir, 'tcx> {
                     continue;
                 }
 
-                self.span = local.source_info.span_source.to_span(tcx);
+                self.span = local.source_info.span_source;
                 self.check_local_or_return_ty(local.ty, idx);
             }
 
             // impl trait is gone in MIR, so check the return type of a const fn by its signature
             // instead of the type of the return place.
-            self.span = body.local_decls[RETURN_PLACE].source_info.span_source.to_span(tcx); // FIXME
+            self.span = body.local_decls[RETURN_PLACE].source_info.span_source;
             let return_ty = tcx.fn_sig(def_id).output();
             self.check_local_or_return_ty(return_ty.skip_binder(), RETURN_PLACE);
         }
@@ -287,7 +288,7 @@ impl Validator<'mir, 'tcx> {
 
     /// Emits an error at the given `span` if an expression cannot be evaluated in the current
     /// context.
-    pub fn check_op_spanned<O: NonConstOp>(&mut self, op: O, span: Span) {
+    pub fn check_op_spanned<O: NonConstOp>(&mut self, op: O, span: SpanSource) {
         let gate = match op.status_in_item(self.ccx) {
             Status::Allowed => return,
 
@@ -295,7 +296,7 @@ impl Validator<'mir, 'tcx> {
                 let unstable_in_stable = self.ccx.is_const_stable_const_fn()
                     && !super::allow_internal_unstable(self.tcx, self.def_id().to_def_id(), gate);
                 if unstable_in_stable {
-                    emit_unstable_in_stable_error(self.ccx, span, gate);
+                    emit_unstable_in_stable_error(self.ccx, span.to_span(self.tcx), gate);
                 }
 
                 return;
@@ -306,7 +307,7 @@ impl Validator<'mir, 'tcx> {
         };
 
         if self.tcx.sess.opts.debugging_opts.unleash_the_miri_inside_of_you {
-            self.tcx.sess.miri_unleashed_feature(span, gate);
+            self.tcx.sess.miri_unleashed_feature(span.to_span(self.tcx), gate);
             return;
         }
 
@@ -328,7 +329,7 @@ impl Validator<'mir, 'tcx> {
             !self.tcx.is_thread_local_static(def_id),
             "tls access is checked in `Rvalue::ThreadLocalRef"
         );
-        self.check_op_spanned(ops::StaticAccess, span_source.to_span(self.tcx))
+        self.check_op_spanned(ops::StaticAccess, span_source)
     }
 
     fn check_local_or_return_ty(&mut self, ty: Ty<'tcx>, local: Local) {
@@ -400,7 +401,7 @@ impl Validator<'mir, 'tcx> {
                             ty::Param(p) => {
                                 let generics = tcx.generics_of(current);
                                 let def = generics.type_param(p, tcx);
-                                let span = tcx.def_span(def.def_id);
+                                let span = SpanSource::DefId(def.def_id);
 
                                 // These are part of the function signature, so treat them like
                                 // arguments when determining importance.
@@ -599,7 +600,11 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
                 } else if ty.is_floating_point() {
                     self.check_op(ops::FloatingPointOp);
                 } else {
-                    span_bug!(self.span, "non-primitive type in `Rvalue::UnaryOp`: {:?}", ty);
+                    span_bug!(
+                        self.span.to_span(self.tcx),
+                        "non-primitive type in `Rvalue::UnaryOp`: {:?}",
+                        ty
+                    );
                 }
             }
 
@@ -627,7 +632,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
                     self.check_op(ops::FloatingPointOp);
                 } else {
                     span_bug!(
-                        self.span,
+                        self.span.to_span(self.tcx),
                         "non-primitive type in `Rvalue::BinaryOp`: {:?} ⚬ {:?}",
                         lhs_ty,
                         rhs_ty
@@ -641,7 +646,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
         self.super_operand(op, location);
         if let Operand::Constant(c) = op {
             if let Some(def_id) = c.check_static_ptr(self.tcx) {
-                self.check_static(def_id, SpanSource::Span(self.span));
+                self.check_static(def_id, self.span);
             }
         }
     }
@@ -705,7 +710,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 
     fn visit_source_info(&mut self, source_info: &SourceInfo) {
         trace!("visit_source_info: source_info={:?}", source_info);
-        self.span = source_info.span_source.to_span(self.tcx);
+        self.span = source_info.span_source;
     }
 
     fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
@@ -733,13 +738,13 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 
     fn visit_terminator(&mut self, terminator: &Terminator<'tcx>, location: Location) {
         use rustc_target::spec::abi::Abi::RustIntrinsic;
+        let ConstCx { tcx, body, param_env, .. } = *self.ccx;
 
         trace!("visit_terminator: terminator={:?} location={:?}", terminator, location);
         self.super_terminator(terminator, location);
 
         match &terminator.kind {
             TerminatorKind::Call { func, .. } => {
-                let ConstCx { tcx, body, param_env, .. } = *self.ccx;
                 let caller = self.def_id().to_def_id();
 
                 let fn_ty = func.ty(body, tcx);
@@ -804,7 +809,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
                 // If the `const fn` we are trying to call is not const-stable, ensure that we have
                 // the proper feature gate enabled.
                 if let Some(gate) = is_unstable_const_fn(tcx, callee) {
-                    if self.span.allows_unstable(gate) {
+                    if self.span.to_span(tcx).allows_unstable(gate) {
                         return;
                     }
 
@@ -866,8 +871,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 
                 let needs_drop = if let Some(local) = dropped_place.as_local() {
                     // Use the span where the local was declared as the span of the drop error.
-                    err_span =
-                        self.body.local_decls[local].source_info.span_source.to_span(self.tcx);
+                    err_span = self.body.local_decls[local].source_info.span_source;
                     self.qualifs.needs_drop(self.ccx, local, location)
                 } else {
                     true
@@ -875,11 +879,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 
                 if needs_drop {
                     self.check_op_spanned(
-                        ops::LiveDrop {
-                            dropped_at: Some(
-                                terminator.source_info.span_source.to_span(self.tcx), //FIXME
-                            ),
-                        },
+                        ops::LiveDrop { dropped_at: Some(terminator.source_info.span_source) },
                         err_span,
                     );
                 }
@@ -893,7 +893,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 
             TerminatorKind::Abort => {
                 // Cleanup blocks are skipped for const checking (see `visit_basic_block_data`).
-                span_bug!(self.span, "`Abort` terminator outside of cleanup block")
+                span_bug!(self.span.to_span(tcx), "`Abort` terminator outside of cleanup block")
             }
 
             TerminatorKind::Assert { .. }
@@ -911,10 +911,9 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 fn check_return_ty_is_sync(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, hir_id: HirId) {
     let ty = body.return_ty();
     tcx.infer_ctxt().enter(|infcx| {
-        let cause =
-            traits::ObligationCause::new(SpanSource::Span(body.span), hir_id, traits::SharedStatic);
+        let cause = traits::ObligationCause::new(body.span, hir_id, traits::SharedStatic);
         let mut fulfillment_cx = traits::FulfillmentContext::new();
-        let sync_def_id = tcx.require_lang_item(LangItem::Sync, Some(SpanSource::Span(body.span)));
+        let sync_def_id = tcx.require_lang_item(LangItem::Sync, Some(body.span));
         fulfillment_cx.register_bound(&infcx, ty::ParamEnv::empty(), ty, sync_def_id, cause);
         if let Err(err) = fulfillment_cx.select_all_or_error(&infcx) {
             infcx.report_fulfillment_errors(&err, None, false);
@@ -959,7 +958,8 @@ fn is_async_fn(ccx: &ConstCx<'_, '_>) -> bool {
 }
 
 fn emit_unstable_in_stable_error(ccx: &ConstCx<'_, '_>, span: Span, gate: Symbol) {
-    let attr_span = ccx.fn_sig().map_or(ccx.body.span, |sig| sig.span.shrink_to_lo());
+    let attr_span =
+        ccx.fn_sig().map_or(ccx.body.span.to_span(ccx.tcx), |sig| sig.span.shrink_to_lo());
 
     ccx.tcx
         .sess

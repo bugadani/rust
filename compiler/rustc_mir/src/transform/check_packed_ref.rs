@@ -1,4 +1,3 @@
-use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::{PlaceContext, Visitor};
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, TyCtxt};
@@ -12,7 +11,7 @@ pub struct CheckPackedRef;
 impl<'tcx> MirPass<'tcx> for CheckPackedRef {
     fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
         let param_env = tcx.param_env(body.source.def_id());
-        let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
+        let source_info = SourceInfo::outermost(body.span);
         let mut checker = PackedRefChecker { body, tcx, param_env, source_info };
         checker.visit_body(&body);
     }

@@ -1,4 +1,5 @@
 use rustc_errors::{Applicability, DiagnosticBuilder};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty;
 use rustc_span::source_map::DesugaringKind;
@@ -30,7 +31,7 @@ enum GroupedMoveError<'tcx> {
     // e.g., match x[0] { s => (), } where x: &[String]
     MovesFromPlace {
         original_path: Place<'tcx>,
-        span: Span,
+        span: SpanSource,
         move_from: Place<'tcx>,
         kind: IllegalMoveOriginKind<'tcx>,
         binds_to: Vec<Local>,
@@ -39,7 +40,7 @@ enum GroupedMoveError<'tcx> {
     // e.g., match &String::new() { &x => (), }
     MovesFromValue {
         original_path: Place<'tcx>,
-        span: Span,
+        span: SpanSource,
         move_from: MovePathIndex,
         kind: IllegalMoveOriginKind<'tcx>,
         binds_to: Vec<Local>,
@@ -121,7 +122,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                                 local,
                                 opt_match_place,
                                 match_span,
-                                stmt_source_info.span_source.to_span(self.infcx.tcx), // FIXME
+                                stmt_source_info.span_source,
                             );
                             return;
                         }
@@ -146,8 +147,8 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
         move_from: Place<'tcx>,
         bind_to: Local,
         match_place: Option<Place<'tcx>>,
-        match_span: Span,
-        statement_span: Span,
+        match_span: SpanSource,
+        statement_span: SpanSource,
     ) {
         debug!("append_binding_error(match_place={:?}, match_span={:?})", match_place, match_span);
 
@@ -159,7 +160,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
             LookupResult::Parent(_) => {
                 for ge in &mut *grouped_errors {
                     if let GroupedMoveError::MovesFromPlace { span, binds_to, .. } = ge {
-                        if match_span == *span {
+                        if match_span.to_span(self.infcx.tcx) == span.to_span(self.infcx.tcx) {
                             debug!("appending local({:?}) to list", bind_to);
                             if !binds_to.is_empty() {
                                 binds_to.push(bind_to);
@@ -199,7 +200,9 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                         ..
                     } = ge
                     {
-                        if match_span == *span && mpi == *other_mpi {
+                        if match_span.to_span(self.infcx.tcx) == span.to_span(self.infcx.tcx)
+                            && mpi == *other_mpi
+                        {
                             debug!("appending local({:?}) to list", bind_to);
                             binds_to.push(bind_to);
                             return;
@@ -221,7 +224,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
     fn report(&mut self, error: GroupedMoveError<'tcx>) {
         let (mut err, err_span) = {
             let (span, use_spans, original_path, kind): (
-                Span,
+                SpanSource,
                 Option<UseSpans<'tcx>>,
                 Place<'tcx>,
                 &IllegalMoveOriginKind<'_>,
@@ -269,7 +272,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
     fn report_cannot_move_from_static(
         &mut self,
         place: Place<'tcx>,
-        span: Span,
+        span: SpanSource,
     ) -> DiagnosticBuilder<'a> {
         let description = if place.projection.len() == 1 {
             format!("static item {}", self.describe_any_place(place.as_ref()))
@@ -290,7 +293,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
         &mut self,
         move_place: Place<'tcx>,
         deref_target_place: Place<'tcx>,
-        span: Span,
+        span: SpanSource,
         use_spans: Option<UseSpans<'tcx>>,
     ) -> DiagnosticBuilder<'a> {
         // Inspect the type of the content behind the
@@ -384,7 +387,9 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                 }
             }
         };
-        if let Ok(snippet) = self.infcx.tcx.sess.source_map().span_to_snippet(span) {
+        if let Ok(snippet) =
+            self.infcx.tcx.sess.source_map().span_to_snippet(span.to_span(self.infcx.tcx))
+        {
             let def_id = match *move_place.ty(self.body, self.infcx.tcx).ty.kind() {
                 ty::Adt(self_def, _) => self_def.did,
                 ty::Foreign(def_id)
@@ -398,7 +403,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
             let is_result = self.infcx.tcx.is_diagnostic_item(sym::result_type, def_id);
             if (is_option || is_result) && use_spans.map_or(true, |v| !v.for_closure()) {
                 err.span_suggestion(
-                    span,
+                    span.to_span(self.infcx.tcx),
                     &format!(
                         "consider borrowing the `{}`'s content",
                         if is_option { "Option" } else { "Result" }
@@ -406,12 +411,14 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                     format!("{}.as_ref()", snippet),
                     Applicability::MaybeIncorrect,
                 );
-            } else if matches!(span.desugaring_kind(), Some(DesugaringKind::ForLoop(_)))
-                && self.infcx.tcx.is_diagnostic_item(sym::vec_type, def_id)
+            } else if matches!(
+                span.to_span(self.infcx.tcx).desugaring_kind(),
+                Some(DesugaringKind::ForLoop(_))
+            ) && self.infcx.tcx.is_diagnostic_item(sym::vec_type, def_id)
             {
                 // FIXME: suggest for anything that implements `IntoIterator`.
                 err.span_suggestion(
-                    span,
+                    span.to_span(self.infcx.tcx),
                     "consider iterating over a slice of the `Vec<_>`'s content",
                     format!("&{}", snippet),
                     Applicability::MaybeIncorrect,
@@ -425,13 +432,15 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
         &self,
         error: GroupedMoveError<'tcx>,
         err: &mut DiagnosticBuilder<'a>,
-        span: Span,
+        span: SpanSource,
     ) {
         match error {
             GroupedMoveError::MovesFromPlace { mut binds_to, move_from, .. } => {
-                if let Ok(snippet) = self.infcx.tcx.sess.source_map().span_to_snippet(span) {
+                if let Ok(snippet) =
+                    self.infcx.tcx.sess.source_map().span_to_snippet(span.to_span(self.infcx.tcx))
+                {
                     err.span_suggestion(
-                        span,
+                        span.to_span(self.infcx.tcx),
                         "consider borrowing here",
                         format!("&{}", snippet),
                         Applicability::Unspecified,
@@ -475,9 +484,16 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                 };
                 self.note_type_does_not_implement_copy(err, &place_desc, place_ty, Some(span), "");
 
-                use_spans.args_span_label(err, format!("move out of {} occurs here", place_desc));
-                use_spans
-                    .var_span_label(err, format!("move occurs due to use{}", use_spans.describe()));
+                use_spans.args_span_label(
+                    self.infcx.tcx,
+                    err,
+                    format!("move out of {} occurs here", place_desc),
+                );
+                use_spans.var_span_label(
+                    self.infcx.tcx,
+                    err,
+                    format!("move occurs due to use{}", use_spans.describe()),
+                );
             }
         }
     }
@@ -490,6 +506,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                 VarBindingForm { pat_span, .. },
             )))) = bind_to.local_info
             {
+                let pat_span = pat_span.to_span(self.infcx.tcx);
                 if let Ok(pat_snippet) = self.infcx.tcx.sess.source_map().span_to_snippet(pat_span)
                 {
                     if let Some(stripped) = pat_snippet.strip_prefix('&') {
@@ -521,12 +538,12 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
     fn add_move_error_details(&self, err: &mut DiagnosticBuilder<'a>, binds_to: &[Local]) {
         for (j, local) in binds_to.iter().enumerate() {
             let bind_to = &self.body.local_decls[*local];
-            let binding_span = bind_to.source_info.span_source.to_span(self.infcx.tcx);
+            let binding_span = bind_to.source_info.span_source;
 
             if j == 0 {
-                err.span_label(binding_span, "data moved here");
+                err.span_label(binding_span.to_span(self.infcx.tcx), "data moved here");
             } else {
-                err.span_label(binding_span, "...and here");
+                err.span_label(binding_span.to_span(self.infcx.tcx), "...and here");
             }
 
             if binds_to.len() == 1 {

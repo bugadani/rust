@@ -29,7 +29,7 @@ impl<'tcx> MirPass<'tcx> for ElaborateDrops {
             Ok(move_data) => move_data,
             Err((move_data, _)) => {
                 tcx.sess.delay_span_bug(
-                    body.span,
+                    body.span.to_span(tcx),
                     "No `move_errors` should be allowed in MIR borrowck",
                 );
                 move_data
@@ -471,7 +471,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
 
     fn constant_bool(&self, span_source: SpanSource, val: bool) -> Rvalue<'tcx> {
         Rvalue::Use(Operand::Constant(Box::new(Constant {
-            span: span_source.to_span(self.tcx), // FIXME
+            span: span_source,
             user_ty: None,
             literal: ty::Const::from_bool(self.tcx, val),
         })))

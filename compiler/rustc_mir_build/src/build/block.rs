@@ -158,13 +158,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                 this.storage_live_binding(
                                     block,
                                     node,
-                                    SpanSource::Span(span),
+                                    span,
                                     OutsideGuard,
                                     true,
                                 );
                                 this.schedule_drop_for_binding(
                                     node,
-                                    SpanSource::Span(span),
+                                    span,
                                     OutsideGuard,
                                 );
                             },

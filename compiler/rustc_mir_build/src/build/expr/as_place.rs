@@ -180,7 +180,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 if let Some(user_ty) = user_ty {
                     let annotation_index =
                         this.canonical_user_type_annotations.push(CanonicalUserTypeAnnotation {
-                            span: source_info.span_source.to_span(this.hir.tcx()),
+                            span: source_info.span_source,
                             user_ty,
                             inferred_ty: expr.ty,
                         });
@@ -209,7 +209,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 if let Some(user_ty) = user_ty {
                     let annotation_index =
                         this.canonical_user_type_annotations.push(CanonicalUserTypeAnnotation {
-                            span: source_info.span_source.to_span(this.hir.tcx()),
+                            span: source_info.span_source,
                             user_ty,
                             inferred_ty: expr.ty,
                         });

@@ -79,7 +79,11 @@ impl<'cg, 'cx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'tcx> {
                 );
             }
             TyContext::UserTy(span) => {
-                span_bug!(span, "should not be visiting outside of the CFG: {:?}", ty_context);
+                span_bug!(
+                    span.to_span(self.infcx.tcx),
+                    "should not be visiting outside of the CFG: {:?}",
+                    ty_context
+                );
             }
             TyContext::Location(location) => {
                 self.add_regular_live_constraint(ty, location);

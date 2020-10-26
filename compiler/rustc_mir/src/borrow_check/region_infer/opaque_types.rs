@@ -1,8 +1,8 @@
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def_id::DefId;
 use rustc_infer::infer::InferCtxt;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, TyCtxt, TypeFoldable};
-use rustc_span::Span;
 use rustc_trait_selection::opaque_types::InferCtxtExt;
 
 use super::RegionInferenceContext;
@@ -51,7 +51,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         &self,
         infcx: &InferCtxt<'_, 'tcx>,
         opaque_ty_decls: FxHashMap<DefId, ty::ResolvedOpaqueTy<'tcx>>,
-        span: Span,
+        span: SpanSource,
     ) -> FxHashMap<DefId, ty::ResolvedOpaqueTy<'tcx>> {
         opaque_ty_decls
             .into_iter()
@@ -68,7 +68,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                             subst_regions.push(vid);
                             self.definitions[vid].external_name.unwrap_or_else(|| {
                                 infcx.tcx.sess.delay_span_bug(
-                                    span,
+                                    span.to_span(infcx.tcx),
                                     "opaque type with non-universal region substs",
                                 );
                                 infcx.tcx.lifetimes.re_static
@@ -83,7 +83,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                         ty::ReStatic => region,
                         _ => {
                             infcx.tcx.sess.delay_span_bug(
-                                span,
+                                span.to_span(infcx.tcx),
                                 &format!("unexpected concrete region in borrowck: {:?}", region),
                             );
                             region
@@ -103,7 +103,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                         ty::ReLateBound(..) => region,
                         _ => {
                             infcx.tcx.sess.delay_span_bug(
-                                span,
+                                span.to_span(infcx.tcx),
                                 &format!("unexpected concrete region in borrowck: {:?}", region),
                             );
                             region

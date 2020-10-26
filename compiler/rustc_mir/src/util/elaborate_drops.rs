@@ -629,13 +629,13 @@ where
                         tcx,
                         drop_fn.def_id,
                         substs,
-                        self.source_info.span_source.to_span(tcx),
+                        self.source_info.span_source,
                     ),
                     args: vec![Operand::Move(Place::from(ref_place))],
                     destination: Some((unit_temp, succ)),
                     cleanup: unwind.into_option(),
                     from_hir_call: true,
-                    fn_span: self.source_info.span_source.to_span(tcx), // FIXME
+                    fn_span: self.source_info.span_source,
                 },
                 source_info: self.source_info,
             }),
@@ -964,17 +964,12 @@ where
             .collect();
 
         let call = TerminatorKind::Call {
-            func: Operand::function_handle(
-                tcx,
-                free_func,
-                substs,
-                self.source_info.span_source.to_span(tcx),
-            ),
+            func: Operand::function_handle(tcx, free_func, substs, self.source_info.span_source),
             args,
             destination: Some((unit_temp, target)),
             cleanup: None,
             from_hir_call: false,
-            fn_span: self.source_info.span_source.to_span(tcx), // FIXME
+            fn_span: self.source_info.span_source,
         }; // FIXME(#43234)
         let free_block = self.new_block(unwind, call);
 
@@ -1036,7 +1031,7 @@ where
 
     fn constant_usize(&self, val: u16) -> Operand<'tcx> {
         Operand::Constant(box Constant {
-            span: self.source_info.span_source.to_span(self.tcx()), // FIXME
+            span: self.source_info.span_source,
             user_ty: None,
             literal: ty::Const::from_usize(self.tcx(), val.into()),
         })

@@ -532,7 +532,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         args: &Vec<mir::Operand<'tcx>>,
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
-        fn_span: Span,
+        fn_span: SpanSource,
     ) {
         let span_source = terminator.source_info.span_source;
         // Create the callee. This is a fn ptr or zero-sized and hence a kind of scalar.
@@ -632,7 +632,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 
         if intrinsic == Some(sym::caller_location) {
             if let Some((_, target)) = destination.as_ref() {
-                let location = self.get_caller_location(&mut bx, SpanSource::Span(fn_span));
+                let location = self.get_caller_location(&mut bx, fn_span);
 
                 if let ReturnDest::IndirectOperand(tmp, _) = ret_dest {
                     location.val.store(&mut bx, tmp);
@@ -809,10 +809,12 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 args.len() + 1,
                 "#[track_caller] fn's must have 1 more argument in their ABI than in their MIR",
             );
-            let location = self.get_caller_location(&mut bx, SpanSource::Span(fn_span));
+            let location = self.get_caller_location(&mut bx, fn_span);
             debug!(
                 "codegen_call_terminator({:?}): location={:?} (fn_span {:?})",
-                terminator, location, fn_span
+                terminator,
+                location,
+                fn_span.to_span(self.cx.tcx())
             );
 
             let last_arg = fn_abi.args.last().unwrap();
@@ -1247,7 +1249,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 
     fn landing_pad_uncached(&mut self, target_bb: Bx::BasicBlock) -> Bx::BasicBlock {
         if base::wants_msvc_seh(self.cx.sess()) {
-            span_bug!(self.mir.span, "landing pad was not inserted?")
+            span_source_bug!(self.mir.span, "landing pad was not inserted?")
         }
 
         let mut bx = self.new_block("cleanup");
@@ -1344,7 +1346,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 //
                 // If someone changes that, please update this code path
                 // to create a temporary.
-                span_bug!(self.mir.span, "can't directly store to unaligned value");
+                span_source_bug!(self.mir.span, "can't directly store to unaligned value");
             }
             llargs.push(dest.llval);
             ReturnDest::Nothing

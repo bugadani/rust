@@ -176,7 +176,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                 let kind = match layout_of.abi {
                     Abi::Scalar(ref scalar) => scalar.value,
                     _ => span_bug!(
-                        self.cur_span(),
+                        self.cur_span().to_span(*self.tcx),
                         "{} called on invalid type {:?}",
                         intrinsic_name,
                         ty

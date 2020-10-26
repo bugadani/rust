@@ -3,11 +3,13 @@ use std::fmt::{self, Display};
 use rustc_errors::DiagnosticBuilder;
 use rustc_hir as hir;
 use rustc_hir::def::{DefKind, Res};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::print::RegionHighlightMode;
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
+use rustc_middle::ty::TyCtxt;
 use rustc_middle::ty::{self, RegionVid, Ty};
 use rustc_span::symbol::kw;
-use rustc_span::{symbol::Symbol, Span, DUMMY_SP};
+use rustc_span::{symbol::Symbol, DUMMY_SP};
 
 use crate::borrow_check::{nll::ToRegionVid, universal_regions::DefiningTy, MirBorrowckCtxt};
 
@@ -27,23 +29,23 @@ crate struct RegionName {
 #[derive(Debug, Clone)]
 crate enum RegionNameSource {
     /// A bound (not free) region that was substituted at the def site (not an HRTB).
-    NamedEarlyBoundRegion(Span),
+    NamedEarlyBoundRegion(SpanSource),
     /// A free region that the user has a name (`'a`) for.
-    NamedFreeRegion(Span),
+    NamedFreeRegion(SpanSource),
     /// The `'static` region.
     Static,
     /// The free region corresponding to the environment of a closure.
-    SynthesizedFreeEnvRegion(Span, String),
+    SynthesizedFreeEnvRegion(SpanSource, String),
     /// The region corresponding to an argument.
     AnonRegionFromArgument(RegionNameHighlight),
     /// The region corresponding to a closure upvar.
-    AnonRegionFromUpvar(Span, String),
+    AnonRegionFromUpvar(SpanSource, String),
     /// The region corresponding to the return type of a closure.
-    AnonRegionFromOutput(Span, String, String),
+    AnonRegionFromOutput(SpanSource, String, String),
     /// The region from a type yielded by a generator.
-    AnonRegionFromYieldTy(Span, String),
+    AnonRegionFromYieldTy(SpanSource, String),
     /// An anonymous region from an async fn.
-    AnonRegionFromAsyncFn(Span),
+    AnonRegionFromAsyncFn(SpanSource),
 }
 
 /// Describes what to highlight to explain to the user that we're giving an anonymous region a
@@ -51,12 +53,12 @@ crate enum RegionNameSource {
 #[derive(Debug, Clone)]
 crate enum RegionNameHighlight {
     /// The anonymous region corresponds to a reference that was found by traversing the type in the HIR.
-    MatchedHirTy(Span),
+    MatchedHirTy(SpanSource),
     /// The anonymous region corresponds to a `'_` in the generics list of a struct/enum/union.
-    MatchedAdtAndSegment(Span),
+    MatchedAdtAndSegment(SpanSource),
     /// The anonymous region corresponds to a region where the type annotation is completely missing
     /// from the code, e.g. in a closure arguments `|x| { ... }`, where `x` is a reference.
-    CannotMatchHirTy(Span, String),
+    CannotMatchHirTy(SpanSource, String),
 }
 
 impl RegionName {
@@ -74,7 +76,7 @@ impl RegionName {
         }
     }
 
-    crate fn span(&self) -> Option<Span> {
+    crate fn span(&self) -> Option<SpanSource> {
         match self.source {
             RegionNameSource::Static => None,
             RegionNameSource::NamedEarlyBoundRegion(span)
@@ -92,15 +94,15 @@ impl RegionName {
         }
     }
 
-    crate fn highlight_region_name(&self, diag: &mut DiagnosticBuilder<'_>) {
+    crate fn highlight_region_name(&self, tcx: TyCtxt<'tcx>, diag: &mut DiagnosticBuilder<'_>) {
         match &self.source {
             RegionNameSource::NamedFreeRegion(span)
             | RegionNameSource::NamedEarlyBoundRegion(span) => {
-                diag.span_label(*span, format!("lifetime `{}` defined here", self));
+                diag.span_label(span.to_span(tcx), format!("lifetime `{}` defined here", self));
             }
             RegionNameSource::SynthesizedFreeEnvRegion(span, note) => {
                 diag.span_label(
-                    *span,
+                    span.to_span(tcx),
                     format!("lifetime `{}` represents this closure's body", self),
                 );
                 diag.note(&note);
@@ -109,31 +111,34 @@ impl RegionName {
                 span,
                 type_name,
             )) => {
-                diag.span_label(*span, format!("has type `{}`", type_name));
+                diag.span_label(span.to_span(tcx), format!("has type `{}`", type_name));
             }
             RegionNameSource::AnonRegionFromArgument(RegionNameHighlight::MatchedHirTy(span))
             | RegionNameSource::AnonRegionFromAsyncFn(span) => {
                 diag.span_label(
-                    *span,
+                    span.to_span(tcx),
                     format!("let's call the lifetime of this reference `{}`", self),
                 );
             }
             RegionNameSource::AnonRegionFromArgument(
                 RegionNameHighlight::MatchedAdtAndSegment(span),
             ) => {
-                diag.span_label(*span, format!("let's call this `{}`", self));
+                diag.span_label(span.to_span(tcx), format!("let's call this `{}`", self));
             }
             RegionNameSource::AnonRegionFromUpvar(span, upvar_name) => {
                 diag.span_label(
-                    *span,
+                    span.to_span(tcx),
                     format!("lifetime `{}` appears in the type of `{}`", self, upvar_name),
                 );
             }
             RegionNameSource::AnonRegionFromOutput(span, mir_description, type_name) => {
-                diag.span_label(*span, format!("return type{} is {}", mir_description, type_name));
+                diag.span_label(
+                    span.to_span(tcx),
+                    format!("return type{} is {}", mir_description, type_name),
+                );
             }
             RegionNameSource::AnonRegionFromYieldTy(span, type_name) => {
-                diag.span_label(*span, format!("yield type is {}", type_name));
+                diag.span_label(span.to_span(tcx), format!("yield type is {}", type_name));
             }
             RegionNameSource::Static => {}
         }
@@ -233,6 +238,7 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
             ty::ReEarlyBound(ebr) => {
                 if ebr.has_name() {
                     let span = tcx.hir().span_if_local(ebr.def_id).unwrap_or(DUMMY_SP);
+                    let span = SpanSource::Span(span);
                     Some(RegionName {
                         name: ebr.name,
                         source: RegionNameSource::NamedEarlyBoundRegion(span),
@@ -250,6 +256,7 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
                 ty::BoundRegion::BrNamed(region_def_id, name) => {
                     // Get the span to point to, even if we don't use the name.
                     let span = tcx.hir().span_if_local(region_def_id).unwrap_or(DUMMY_SP);
+                    let span = SpanSource::Span(span);
                     debug!(
                         "bound region named: {:?}, is_named: {:?}",
                         name,
@@ -280,7 +287,7 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
                         let args_span = if let hir::ExprKind::Closure(_, _, _, span, _) =
                             tcx.hir().expect_expr(self.mir_hir_id()).kind
                         {
-                            span
+                            SpanSource::Span(span)
                         } else {
                             bug!("Closure is not defined by a closure expr");
                         };
@@ -344,7 +351,6 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
         let arg_ty = self.regioncx.universal_regions().unnormalized_input_tys
             [implicit_inputs + argument_index];
         let (_, span) = self.regioncx.get_argument_name_and_span_for_region(
-            self.infcx.tcx,
             &self.body,
             &self.local_names,
             argument_index,
@@ -398,7 +404,7 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
         &self,
         needle_fr: RegionVid,
         ty: Ty<'tcx>,
-        span: Span,
+        span: SpanSource,
         counter: usize,
     ) -> Option<RegionNameHighlight> {
         let mut highlight = RegionHighlightMode::default();
@@ -464,7 +470,9 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
                         let source_map = self.infcx.tcx.sess.source_map();
                         let ampersand_span = source_map.start_point(hir_ty.span);
 
-                        return Some(RegionNameHighlight::MatchedHirTy(ampersand_span));
+                        return Some(RegionNameHighlight::MatchedHirTy(SpanSource::Span(
+                            ampersand_span,
+                        )));
                     }
 
                     // Otherwise, let's descend into the referent types.
@@ -543,7 +551,7 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
             | hir::LifetimeName::Error
             | hir::LifetimeName::Static
             | hir::LifetimeName::Underscore => {
-                let lifetime_span = lifetime.span;
+                let lifetime_span = SpanSource::Span(lifetime.span);
                 Some(RegionNameHighlight::MatchedAdtAndSegment(lifetime_span))
             }
 
@@ -662,15 +670,17 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
                 ..
             }) => (
                 match return_ty.output {
-                    hir::FnRetTy::DefaultReturn(_) => tcx.sess.source_map().end_point(*span),
-                    hir::FnRetTy::Return(_) => return_ty.output.span(),
+                    hir::FnRetTy::DefaultReturn(_) => {
+                        SpanSource::Span(tcx.sess.source_map().end_point(*span))
+                    }
+                    hir::FnRetTy::Return(_) => SpanSource::Span(return_ty.output.span()), // FIXME maybe don't use Span directly?
                 },
                 if gen_move.is_some() { " of generator" } else { " of closure" },
             ),
             hir::Node::ImplItem(hir::ImplItem {
                 kind: hir::ImplItemKind::Fn(method_sig, _),
                 ..
-            }) => (method_sig.decl.output.span(), ""),
+            }) => (SpanSource::Span(method_sig.decl.output.span()), ""),
             _ => (self.body.span, ""),
         };
 
@@ -710,7 +720,7 @@ impl<'tcx> MirBorrowckCtxt<'_, 'tcx> {
         let yield_span = match tcx.hir().get(self.mir_hir_id()) {
             hir::Node::Expr(hir::Expr {
                 kind: hir::ExprKind::Closure(_, _, _, span, _), ..
-            }) => (tcx.sess.source_map().end_point(*span)),
+            }) => SpanSource::Span(tcx.sess.source_map().end_point(*span)),
             _ => self.body.span,
         };
 

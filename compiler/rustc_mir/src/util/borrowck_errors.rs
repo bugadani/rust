@@ -30,13 +30,13 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
 
     crate fn cannot_act_on_uninitialized_variable(
         &self,
-        span: Span,
+        span: SpanSource,
         verb: &str,
         desc: &str,
     ) -> DiagnosticBuilder<'cx> {
         struct_span_err!(
             self,
-            span,
+            span.to_span(self.infcx.tcx),
             E0381,
             "{} of possibly-uninitialized variable: `{}`",
             verb,
@@ -273,10 +273,16 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
 
     crate fn cannot_move_out_of(
         &self,
-        move_from_span: Span,
+        move_from_span: SpanSource,
         move_from_desc: &str,
     ) -> DiagnosticBuilder<'cx> {
-        struct_span_err!(self, move_from_span, E0507, "cannot move out of {}", move_from_desc,)
+        struct_span_err!(
+            self,
+            move_from_span.to_span(self.infcx.tcx),
+            E0507,
+            "cannot move out of {}",
+            move_from_desc,
+        )
     }
 
     /// Signal an error due to an attempt to move out of the interior
@@ -284,10 +290,11 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
     /// didn't capture whether there was an indexing operation or not.
     crate fn cannot_move_out_of_interior_noncopy(
         &self,
-        move_from_span: Span,
+        move_from_span: SpanSource,
         ty: Ty<'_>,
         is_index: Option<bool>,
     ) -> DiagnosticBuilder<'cx> {
+        let move_from_span = move_from_span.to_span(self.infcx.tcx);
         let type_name = match (&ty.kind(), is_index) {
             (&ty::Array(_, _), Some(true)) | (&ty::Array(_, _), None) => "array",
             (&ty::Slice(_), _) => "slice",
@@ -307,9 +314,10 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
 
     crate fn cannot_move_out_of_interior_of_drop(
         &self,
-        move_from_span: Span,
+        move_from_span: SpanSource,
         container_ty: Ty<'_>,
     ) -> DiagnosticBuilder<'cx> {
+        let move_from_span = move_from_span.to_span(self.infcx.tcx);
         let mut err = struct_span_err!(
             self,
             move_from_span,
@@ -323,7 +331,7 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
 
     crate fn cannot_act_on_moved_value(
         &self,
-        use_span: Span,
+        use_span: SpanSource,
         verb: &str,
         optional_adverb_for_moved: &str,
         moved_path: Option<String>,
@@ -332,7 +340,7 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
 
         struct_span_err!(
             self,
-            use_span,
+            use_span.to_span(self.infcx.tcx),
             E0382,
             "{} of {}moved value{}",
             verb,
@@ -343,11 +351,18 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
 
     crate fn cannot_borrow_path_as_mutable_because(
         &self,
-        span: Span,
+        span: SpanSource,
         path: &str,
         reason: &str,
     ) -> DiagnosticBuilder<'cx> {
-        struct_span_err!(self, span, E0596, "cannot borrow {} as mutable{}", path, reason,)
+        struct_span_err!(
+            self,
+            span.to_span(self.infcx.tcx),
+            E0596,
+            "cannot borrow {} as mutable{}",
+            path,
+            reason,
+        )
     }
 
     crate fn cannot_mutate_in_immutable_section(
@@ -482,12 +497,12 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
 
 crate fn borrowed_data_escapes_closure<'tcx>(
     tcx: TyCtxt<'tcx>,
-    escape_span: Span,
+    escape_span: SpanSource,
     escapes_from: &str,
 ) -> DiagnosticBuilder<'tcx> {
     struct_span_err!(
         tcx.sess,
-        escape_span,
+        escape_span.to_span(tcx),
         E0521,
         "borrowed data escapes outside of {}",
         escapes_from,

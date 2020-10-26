@@ -417,7 +417,10 @@ impl Visitor<'tcx> for ExtraComments<'tcx> {
             ty::Tuple(tys) if tys.is_empty() => {}
             _ => {
                 self.push("mir::Constant");
-                self.push(&format!("+ span: {}", self.tcx.sess.source_map().span_to_string(*span)));
+                self.push(&format!(
+                    "+ span: {}",
+                    self.tcx.sess.source_map().span_to_string(span.to_span(self.tcx))
+                ));
                 if let Some(user_ty) = user_ty {
                     self.push(&format!("+ user_ty: {:?}", user_ty));
                 }
@@ -935,7 +938,7 @@ fn write_user_type_annotations(
             "| {:?}: {:?} at {}",
             index.index(),
             annotation.user_ty,
-            tcx.sess.source_map().span_to_string(annotation.span)
+            tcx.sess.source_map().span_to_string(annotation.span.to_span(tcx))
         )?;
     }
     if !body.user_type_annotations.is_empty() {

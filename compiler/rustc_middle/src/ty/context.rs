@@ -16,6 +16,7 @@ use crate::traits;
 use crate::ty::query::{self, TyCtxtAt};
 use crate::ty::steal::Steal;
 use crate::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, Subst, SubstsRef, UserSubsts};
+use crate::ty::SpanSource;
 use crate::ty::TyKind::*;
 use crate::ty::{
     self, AdtDef, AdtKind, BindingMode, BoundVar, CanonicalPolyFnSig, Const, ConstVid, DefIdTree,
@@ -729,7 +730,7 @@ pub type CanonicalUserTypeAnnotations<'tcx> =
 #[derive(Clone, Debug, TyEncodable, TyDecodable, HashStable, TypeFoldable, Lift)]
 pub struct CanonicalUserTypeAnnotation<'tcx> {
     pub user_ty: CanonicalUserType<'tcx>,
-    pub span: Span,
+    pub span: SpanSource,
     pub inferred_ty: Ty<'tcx>,
 }
 

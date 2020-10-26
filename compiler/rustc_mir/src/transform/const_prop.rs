@@ -138,7 +138,7 @@ impl<'tcx> MirPass<'tcx> for ConstProp {
             Default::default(),
             body.arg_count,
             Default::default(),
-            tcx.def_span(def_id),
+            SpanSource::DefId(def_id.to_def_id()),
             body.generator_kind,
         );
 
@@ -466,7 +466,7 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
         match self.ecx.const_to_op(c.literal, None) {
             Ok(op) => Some(op),
             Err(error) => {
-                let tcx = self.ecx.tcx.at(SpanSource::Span(c.span));
+                let tcx = self.ecx.tcx.at(c.span);
                 let err = ConstEvalErr::new(&self.ecx, error, Some(c.span));
                 if let Some(lint_root) = self.lint_root(source_info) {
                     let lint_only = match c.literal.val {
@@ -792,7 +792,7 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
         span_source: SpanSource,
     ) -> Operand<'tcx> {
         Operand::Constant(Box::new(Constant {
-            span: span_source.to_span(self.tcx),
+            span: span_source,
             user_ty: None,
             literal: ty::Const::from_scalar(self.tcx, scalar, ty),
         }))
@@ -871,7 +871,7 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
                                 // Assign entire constant in a single statement.
                                 // We can't use aggregates, as we run after the aggregate-lowering `MirPhase`.
                                 *rval = Rvalue::Use(Operand::Constant(Box::new(Constant {
-                                    span: source_info.span_source.to_span(self.tcx),
+                                    span: source_info.span_source,
                                     user_ty: None,
                                     literal: self.ecx.tcx.mk_const(ty::Const {
                                         ty,

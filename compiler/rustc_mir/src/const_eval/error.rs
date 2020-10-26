@@ -3,9 +3,10 @@ use std::fmt;
 
 use rustc_errors::{DiagnosticBuilder, ErrorReported};
 use rustc_hir as hir;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::AssertKind;
 use rustc_middle::ty::{layout::LayoutError, query::TyCtxtAt, ConstInt};
-use rustc_span::{Span, Symbol};
+use rustc_span::Symbol;
 
 use super::InterpCx;
 use crate::interpret::{
@@ -56,7 +57,7 @@ impl Error for ConstEvalErrKind {}
 /// and then used to emit the error as a lint or hard error.
 #[derive(Debug)]
 pub struct ConstEvalErr<'tcx> {
-    pub span: Span,
+    pub span: SpanSource,
     pub error: InterpError<'tcx>,
     pub stacktrace: Vec<FrameInfo<'tcx>>,
 }
@@ -68,7 +69,7 @@ impl<'tcx> ConstEvalErr<'tcx> {
     pub fn new<'mir, M: Machine<'mir, 'tcx>>(
         ecx: &InterpCx<'mir, 'tcx, M>,
         error: InterpErrorInfo<'tcx>,
-        span: Option<Span>,
+        span: Option<SpanSource>,
     ) -> ConstEvalErr<'tcx>
     where
         'tcx: 'mir,
@@ -96,7 +97,7 @@ impl<'tcx> ConstEvalErr<'tcx> {
         tcx: TyCtxtAt<'tcx>,
         message: &str,
         lint_root: hir::HirId,
-        span: Option<Span>,
+        span: Option<SpanSource>,
     ) -> ErrorHandled {
         self.struct_generic(
             tcx,
@@ -106,6 +107,7 @@ impl<'tcx> ConstEvalErr<'tcx> {
                 if let Some(span) = span {
                     let primary_spans = lint.span.primary_spans().to_vec();
                     // point at the actual error as the primary span
+                    let span = span.to_span(*tcx);
                     lint.replace_span_with(span);
                     // point to the `const` statement as a secondary span
                     // they don't have any label
@@ -161,12 +163,12 @@ impl<'tcx> ConstEvalErr<'tcx> {
 
         let finish = |mut err: DiagnosticBuilder<'_>, span_msg: Option<String>| {
             if let Some(span_msg) = span_msg {
-                err.span_label(self.span, span_msg);
+                err.span_label(self.span.to_span(*tcx), span_msg);
             }
             // Add spans for the stacktrace. Don't print a single-line backtrace though.
             if self.stacktrace.len() > 1 {
                 for frame_info in &self.stacktrace {
-                    err.span_label(frame_info.span, frame_info.to_string());
+                    err.span_label(frame_info.span.to_span(*tcx), frame_info.to_string());
                 }
             }
             // Let the caller finish the job.

@@ -66,7 +66,7 @@ impl<'tcx> CFG<'tcx> {
             source_info,
             place,
             Rvalue::Use(Operand::Constant(box Constant {
-                span: source_info.span_source.to_span(tcx),
+                span: source_info.span_source,
                 user_ty: None,
                 literal: ty::Const::zero_sized(tcx, tcx.types.unit),
             })),

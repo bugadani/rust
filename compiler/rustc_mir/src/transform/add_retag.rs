@@ -5,7 +5,6 @@
 //! normal MIR semantics.
 
 use crate::transform::MirPass;
-use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 
@@ -80,7 +79,7 @@ impl<'tcx> MirPass<'tcx> for AddRetag {
         {
             // FIXME: Consider using just the span covering the function
             // argument declaration.
-            let source_info = SourceInfo::outermost(SpanSource::Span(span));
+            let source_info = SourceInfo::outermost(span);
             // Gather all arguments, skip return value.
             let places = local_decls
                 .iter_enumerated()

@@ -6,7 +6,6 @@ use rustc_middle::mir::Field;
 use rustc_middle::ty::print::with_no_trimmed_paths;
 use rustc_middle::ty::{self, AdtDef, Ty, TyCtxt};
 use rustc_session::lint;
-use rustc_span::Span;
 use rustc_trait_selection::traits::predicate_for_trait_def;
 use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
 use rustc_trait_selection::traits::{self, ObligationCause, PredicateObligation};
@@ -23,7 +22,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
         &self,
         cv: &'tcx ty::Const<'tcx>,
         id: hir::HirId,
-        span: Span,
+        span: SpanSource,
         mir_structural_match_violation: bool,
     ) -> Pat<'tcx> {
         debug!("const_to_pat: cv={:#?} id={:?}", cv, id);
@@ -41,7 +40,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
 
 struct ConstToPat<'a, 'tcx> {
     id: hir::HirId,
-    span: Span,
+    span: SpanSource,
     param_env: ty::ParamEnv<'tcx>,
 
     // This tracks if we emitted some hard error for a given const value, so that
@@ -86,7 +85,7 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
     fn new(
         pat_ctxt: &PatCtxt<'_, 'tcx>,
         id: hir::HirId,
-        span: Span,
+        span: SpanSource,
         infcx: InferCtxt<'a, 'tcx>,
     ) -> Self {
         ConstToPat {
@@ -187,12 +186,12 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
             if let Some(msg) = structural {
                 if !self.type_may_have_partial_eq_impl(cv.ty) {
                     // span_fatal avoids ICE from resolution of non-existent method (rare case).
-                    self.tcx().sess.span_fatal(self.span, &msg);
+                    self.tcx().sess.span_fatal(self.span.to_span(self.tcx()), &msg);
                 } else if mir_structural_match_violation && !self.saw_const_match_lint.get() {
                     self.tcx().struct_span_lint_hir(
                         lint::builtin::INDIRECT_STRUCTURAL_MATCH,
                         self.id,
-                        self.span,
+                        self.span.to_span(self.tcx()),
                         |lint| lint.build(&msg).emit(),
                     );
                 } else {
@@ -213,13 +212,12 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
         // (If there isn't, then we can safely issue a hard
         // error, because that's never worked, due to compiler
         // using `PartialEq::eq` in this scenario in the past.)
-        let partial_eq_trait_id = self
-            .tcx()
-            .require_lang_item(hir::LangItem::PartialEq, Some(SpanSource::Span(self.span)));
+        let partial_eq_trait_id =
+            self.tcx().require_lang_item(hir::LangItem::PartialEq, Some(self.span));
         let obligation: PredicateObligation<'_> = predicate_for_trait_def(
             self.tcx(),
             self.param_env,
-            ObligationCause::misc(self.span, self.id),
+            ObligationCause::misc_with_span_source(self.span, self.id),
             partial_eq_trait_id,
             0,
             ty,
@@ -268,7 +266,7 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                 tcx.struct_span_lint_hir(
                     lint::builtin::ILLEGAL_FLOATING_POINT_LITERAL_PATTERN,
                     id,
-                    span,
+                    span.to_span(tcx),
                     |lint| lint.build("floating-point types cannot be used in patterns").emit(),
                 );
                 PatKind::Constant { value: cv }
@@ -278,9 +276,9 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                 self.saw_const_match_error.set(true);
                 let msg = "cannot use unions in constant patterns";
                 if self.include_lint_checks {
-                    tcx.sess.span_err(span, msg);
+                    tcx.sess.span_err(span.to_span(tcx), msg);
                 } else {
-                    tcx.sess.delay_span_bug(span, msg)
+                    tcx.sess.delay_span_bug(span.to_span(tcx), msg)
                 }
                 PatKind::Wild
             }
@@ -295,9 +293,9 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                 let msg = self.search_for_structural_match_violation(cv.ty).unwrap();
                 self.saw_const_match_error.set(true);
                 if self.include_lint_checks {
-                    tcx.sess.span_err(self.span, &msg);
+                    tcx.sess.span_err(self.span.to_span(tcx), &msg);
                 } else {
-                    tcx.sess.delay_span_bug(self.span, &msg)
+                    tcx.sess.delay_span_bug(self.span.to_span(tcx), &msg)
                 }
                 PatKind::Wild
             }
@@ -324,7 +322,7 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                     tcx.struct_span_lint_hir(
                         lint::builtin::INDIRECT_STRUCTURAL_MATCH,
                         id,
-                        span,
+                        span.to_span(tcx),
                         |lint| lint.build(&msg).emit(),
                     );
                 }
@@ -343,9 +341,9 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                 );
                 self.saw_const_match_error.set(true);
                 if self.include_lint_checks {
-                    tcx.sess.span_err(span, &msg);
+                    tcx.sess.span_err(span.to_span(tcx), &msg);
                 } else {
-                    tcx.sess.delay_span_bug(span, &msg)
+                    tcx.sess.delay_span_bug(span.to_span(tcx), &msg)
                 }
                 PatKind::Wild
             }
@@ -380,9 +378,9 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                     self.saw_const_match_error.set(true);
                     let msg = format!("`{}` cannot be used in patterns", cv.ty);
                     if self.include_lint_checks {
-                        tcx.sess.span_err(span, &msg);
+                        tcx.sess.span_err(span.to_span(tcx), &msg);
                     } else {
-                        tcx.sess.delay_span_bug(span, &msg)
+                        tcx.sess.delay_span_bug(span.to_span(tcx), &msg)
                     }
                     PatKind::Wild
                 }
@@ -435,7 +433,7 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                             self.tcx().struct_span_lint_hir(
                                 lint::builtin::INDIRECT_STRUCTURAL_MATCH,
                                 self.id,
-                                self.span,
+                                self.span.to_span(tcx),
                                 |lint| lint.build(&msg).emit(),
                             );
                         }
@@ -445,9 +443,9 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                             self.saw_const_match_error.set(true);
                             let msg = self.adt_derive_msg(adt_def);
                             if self.include_lint_checks {
-                                tcx.sess.span_err(span, &msg);
+                                tcx.sess.span_err(span.to_span(tcx), &msg);
                             } else {
-                                tcx.sess.delay_span_bug(span, &msg)
+                                tcx.sess.delay_span_bug(span.to_span(tcx), &msg)
                             }
                         }
                         PatKind::Wild
@@ -473,9 +471,7 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
             ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::FnDef(..) => {
                 PatKind::Constant { value: cv }
             }
-            ty::RawPtr(pointee)
-                if pointee.ty.is_sized(tcx.at(SpanSource::Span(span)), param_env) =>
-            {
+            ty::RawPtr(pointee) if pointee.ty.is_sized(tcx.at(span), param_env) => {
                 PatKind::Constant { value: cv }
             }
             // FIXME: these can have very suprising behaviour where optimization levels or other
@@ -493,7 +489,7 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                     tcx.struct_span_lint_hir(
                         lint::builtin::POINTER_STRUCTURAL_MATCH,
                         id,
-                        span,
+                        span.to_span(self.infcx.tcx),
                         |lint| lint.build(&msg).emit(),
                     );
                 }
@@ -503,9 +499,9 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
                 self.saw_const_match_error.set(true);
                 let msg = format!("`{}` cannot be used in patterns", cv.ty);
                 if self.include_lint_checks {
-                    tcx.sess.span_err(span, &msg);
+                    tcx.sess.span_err(span.to_span(tcx), &msg);
                 } else {
-                    tcx.sess.delay_span_bug(span, &msg)
+                    tcx.sess.delay_span_bug(span.to_span(tcx), &msg)
                 }
                 PatKind::Wild
             }
@@ -529,7 +525,7 @@ impl<'a, 'tcx> ConstToPat<'a, 'tcx> {
             tcx.struct_span_lint_hir(
                 lint::builtin::NONTRIVIAL_STRUCTURAL_MATCH,
                 id,
-                span,
+                span.to_span(self.infcx.tcx),
                 |lint| lint.build(&msg).emit(),
             );
         }

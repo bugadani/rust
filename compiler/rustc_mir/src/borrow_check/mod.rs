@@ -491,7 +491,7 @@ crate struct MirBorrowckCtxt<'cx, 'tcx> {
     /// borrow errors that is handled by the `reservation_error_reported` field as the inclusion
     /// of the `Span` type (while required to mute some errors) stops the muting of the reservation
     /// errors.
-    access_place_error_reported: FxHashSet<(Place<'tcx>, Span)>,
+    access_place_error_reported: FxHashSet<(Place<'tcx>, SpanSource)>,
     /// This field keeps track of when borrow conflict errors are reported
     /// for reservations, so that we don't report seemingly duplicate
     /// errors for corresponding activations.
@@ -508,7 +508,7 @@ crate struct MirBorrowckCtxt<'cx, 'tcx> {
     /// so that we can suppress the warning if there's a corresponding error
     /// for the activation of the borrow.
     reservation_warnings:
-        FxHashMap<BorrowIndex, (Place<'tcx>, Span, Location, BorrowKind, BorrowData<'tcx>)>,
+        FxHashMap<BorrowIndex, (Place<'tcx>, SpanSource, Location, BorrowKind, BorrowData<'tcx>)>,
     /// This field keeps track of move errors that are to be reported for given move indices.
     ///
     /// There are situations where many errors can be reported for a single move out (see #53807)
@@ -577,15 +577,21 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
         location: Location,
     ) {
         debug!("MirBorrowckCtxt::process_statement({:?}, {:?}): {:?}", location, stmt, flow_state);
-        let span = stmt.source_info.span_source.to_span(self.infcx.tcx);
+        let span_source = stmt.source_info.span_source;
 
-        self.check_activations(location, span, flow_state);
+        self.check_activations(location, span_source, flow_state);
 
         match &stmt.kind {
             StatementKind::Assign(box (lhs, ref rhs)) => {
-                self.consume_rvalue(location, (rhs, span), flow_state);
+                self.consume_rvalue(location, (rhs, span_source), flow_state);
 
-                self.mutate_place(location, (*lhs, span), Shallow(None), JustWrite, flow_state);
+                self.mutate_place(
+                    location,
+                    (*lhs, span_source),
+                    Shallow(None),
+                    JustWrite,
+                    flow_state,
+                );
             }
             StatementKind::FakeRead(_, box ref place) => {
                 // Read for match doesn't access any memory and is used to
@@ -601,12 +607,18 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
                 self.check_if_path_or_subpath_is_moved(
                     location,
                     InitializationRequiringAction::Use,
-                    (place.as_ref(), span),
+                    (place.as_ref(), span_source),
                     flow_state,
                 );
             }
             StatementKind::SetDiscriminant { place, variant_index: _ } => {
-                self.mutate_place(location, (**place, span), Shallow(None), JustWrite, flow_state);
+                self.mutate_place(
+                    location,
+                    (**place, span_source),
+                    Shallow(None),
+                    JustWrite,
+                    flow_state,
+                );
             }
             StatementKind::LlvmInlineAsm(ref asm) => {
                 for (o, output) in asm.asm.outputs.iter().zip(asm.outputs.iter()) {
@@ -615,7 +627,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
                         // be encoded through MIR place derefs instead.
                         self.access_place(
                             location,
-                            (*output, o.span),
+                            (*output, SpanSource::Span(o.span)),
                             (Deep, Read(ReadKind::Copy)),
                             LocalMutationIsAllowed::No,
                             flow_state,
@@ -623,13 +635,13 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
                         self.check_if_path_or_subpath_is_moved(
                             location,
                             InitializationRequiringAction::Use,
-                            (output.as_ref(), o.span),
+                            (output.as_ref(), SpanSource::Span(o.span)),
                             flow_state,
                         );
                     } else {
                         self.mutate_place(
                             location,
-                            (*output, o.span),
+                            (*output, SpanSource::Span(o.span)),
                             if o.is_rw { Deep } else { Shallow(None) },
                             if o.is_rw { WriteAndRead } else { JustWrite },
                             flow_state,
@@ -637,7 +649,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
                     }
                 }
                 for (_, input) in asm.inputs.iter() {
-                    self.consume_operand(location, (input, span), flow_state);
+                    self.consume_operand(location, (input, span_source), flow_state);
                 }
             }
             StatementKind::Nop
@@ -651,7 +663,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
             StatementKind::StorageDead(local) => {
                 self.access_place(
                     location,
-                    (Place::from(*local), span),
+                    (Place::from(*local), span_source),
                     (Shallow(None), Write(WriteKind::StorageDeadOrDrop)),
                     LocalMutationIsAllowed::Yes,
                     flow_state,
@@ -667,7 +679,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
         loc: Location,
     ) {
         debug!("MirBorrowckCtxt::process_terminator({:?}, {:?}): {:?}", loc, term, flow_state);
-        let span = term.source_info.span_source.to_span(self.infcx.tcx);
+        let span = term.source_info.span_source;
 
         self.check_activations(loc, span, flow_state);
 
@@ -974,7 +986,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     fn access_place(
         &mut self,
         location: Location,
-        place_span: (Place<'tcx>, Span),
+        place_span: (Place<'tcx>, SpanSource),
         kind: (AccessDepth, ReadOrWrite),
         is_local_mutation_allowed: LocalMutationIsAllowed,
         flow_state: &Flows<'cx, 'tcx>,
@@ -1030,7 +1042,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     fn check_access_for_conflict(
         &mut self,
         location: Location,
-        place_span: (Place<'tcx>, Span),
+        place_span: (Place<'tcx>, SpanSource),
         sd: AccessDepth,
         rw: ReadOrWrite,
         flow_state: &Flows<'cx, 'tcx>,
@@ -1185,7 +1197,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     fn mutate_place(
         &mut self,
         location: Location,
-        place_span: (Place<'tcx>, Span),
+        place_span: (Place<'tcx>, SpanSource),
         kind: AccessDepth,
         mode: MutateMode,
         flow_state: &Flows<'cx, 'tcx>,
@@ -1231,7 +1243,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     fn consume_rvalue(
         &mut self,
         location: Location,
-        (rvalue, span): (&'cx Rvalue<'tcx>, Span),
+        (rvalue, span): (&'cx Rvalue<'tcx>, SpanSource),
         flow_state: &Flows<'cx, 'tcx>,
     ) {
         match *rvalue {
@@ -1443,7 +1455,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     fn consume_operand(
         &mut self,
         location: Location,
-        (operand, span): (&'cx Operand<'tcx>, Span),
+        (operand, span): (&'cx Operand<'tcx>, SpanSource),
         flow_state: &Flows<'cx, 'tcx>,
     ) {
         match *operand {
@@ -1541,7 +1553,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             self.report_borrowed_value_does_not_live_long_enough(
                 location,
                 borrow,
-                (place, span),
+                (place, SpanSource::Span(span)),
                 None,
             )
         }
@@ -1554,7 +1566,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
 
         if borrow_of_local_data(borrow.borrowed_place) {
             let err = self.cannot_borrow_across_generator_yield(
-                self.retrieve_borrow_spans(borrow).var_or_use(),
+                self.retrieve_borrow_spans(borrow).var_or_use().to_span(self.infcx.tcx),
                 yield_span_source.to_span(self.infcx.tcx),
             );
 
@@ -1562,7 +1574,12 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         }
     }
 
-    fn check_activations(&mut self, location: Location, span: Span, flow_state: &Flows<'cx, 'tcx>) {
+    fn check_activations(
+        &mut self,
+        location: Location,
+        span: SpanSource,
+        flow_state: &Flows<'cx, 'tcx>,
+    ) {
         // Two-phase borrow support: For each activation that is newly
         // generated at this statement, check if it interferes with
         // another borrow.
@@ -1593,7 +1610,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         &mut self,
         location: Location,
         local: Local,
-        place_span: (Place<'tcx>, Span),
+        place_span: (Place<'tcx>, SpanSource),
         flow_state: &Flows<'cx, 'tcx>,
     ) {
         debug!("check_if_reassignment_to_immutable_state({:?})", local);
@@ -1611,7 +1628,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         &mut self,
         location: Location,
         desired_action: InitializationRequiringAction,
-        place_span: (PlaceRef<'tcx>, Span),
+        place_span: (PlaceRef<'tcx>, SpanSource),
         flow_state: &Flows<'cx, 'tcx>,
     ) {
         let maybe_uninits = &flow_state.uninits;
@@ -1677,7 +1694,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         &mut self,
         location: Location,
         desired_action: InitializationRequiringAction,
-        place_span: (PlaceRef<'tcx>, Span),
+        place_span: (PlaceRef<'tcx>, SpanSource),
         maybe_uninits: &BitSet<MovePathIndex>,
         from: u64,
         to: u64,
@@ -1716,7 +1733,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         &mut self,
         location: Location,
         desired_action: InitializationRequiringAction,
-        place_span: (PlaceRef<'tcx>, Span),
+        place_span: (PlaceRef<'tcx>, SpanSource),
         flow_state: &Flows<'cx, 'tcx>,
     ) {
         let maybe_uninits = &flow_state.uninits;
@@ -1817,7 +1834,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     fn check_if_assigned_path_is_moved(
         &mut self,
         location: Location,
-        (place, span): (Place<'tcx>, Span),
+        (place, span): (Place<'tcx>, SpanSource),
         flow_state: &Flows<'cx, 'tcx>,
     ) {
         debug!("check_if_assigned_path_is_moved place: {:?}", place);
@@ -1899,7 +1916,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             this: &mut MirBorrowckCtxt<'cx, 'tcx>,
             location: Location,
             base: PlaceRef<'tcx>,
-            span: Span,
+            span: SpanSource,
             flow_state: &Flows<'cx, 'tcx>,
         ) {
             // rust-lang/rust#21232: Until Rust allows reads from the
@@ -1990,7 +2007,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     /// Returns `true` if an error is reported.
     fn check_access_permissions(
         &mut self,
-        (place, span): (Place<'tcx>, Span),
+        (place, span): (Place<'tcx>, SpanSource),
         kind: ReadOrWrite,
         is_local_mutation_allowed: LocalMutationIsAllowed,
         flow_state: &Flows<'cx, 'tcx>,
@@ -2062,7 +2079,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                     // enabled. We don't want to ICE for that case, as other errors will have
                     // been emitted (#52262).
                     self.infcx.tcx.sess.delay_span_bug(
-                        span,
+                        span.to_span(self.infcx.tcx),
                         &format!(
                             "Accessing `{:?}` with the kind `{:?}` shouldn't be possible",
                             place, kind,

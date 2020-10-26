@@ -59,7 +59,7 @@ fn make_mir_scope(
         debug_context.scopes[parent]
     } else {
         // The root is the function itself.
-        let loc = cx.lookup_debug_loc(mir.span.lo());
+        let loc = cx.lookup_debug_loc(mir.span.to_span(cx.tcx).lo());
         debug_context.scopes[scope] = DebugScope {
             scope_metadata: Some(fn_metadata),
             file_start_pos: loc.file.start_pos,
@@ -75,7 +75,7 @@ fn make_mir_scope(
         return;
     }
 
-    let loc = cx.lookup_debug_loc(scope_data.span.lo());
+    let loc = cx.lookup_debug_loc(scope_data.span.to_span(cx.tcx).lo());
     let file_metadata = file_metadata(cx, &loc.file, debug_context.defining_crate);
 
     let scope_metadata = unsafe {

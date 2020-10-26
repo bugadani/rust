@@ -324,7 +324,11 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         if let Ok(imm) = self.try_read_immediate(op)? {
             Ok(imm)
         } else {
-            span_bug!(self.cur_span(), "primitive read failed for type: {:?}", op.layout.ty);
+            span_bug!(
+                self.cur_span().to_span(*self.tcx),
+                "primitive read failed for type: {:?}",
+                op.layout.ty
+            );
         }
     }
 
@@ -374,7 +378,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                 Immediate::from(val)
             }
             Immediate::Scalar(val) => span_bug!(
-                self.cur_span(),
+                self.cur_span().to_span(*self.tcx),
                 "field access on non aggregate {:#?}, {:#?}",
                 val,
                 op.layout
@@ -555,9 +559,11 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                 let instance = self.resolve(def, substs)?;
                 return Ok(self.eval_to_allocation(GlobalId { instance, promoted })?.into());
             }
-            ty::ConstKind::Infer(..) | ty::ConstKind::Placeholder(..) => {
-                span_bug!(self.cur_span(), "const_to_op: Unexpected ConstKind {:?}", val)
-            }
+            ty::ConstKind::Infer(..) | ty::ConstKind::Placeholder(..) => span_bug!(
+                self.cur_span().to_span(*self.tcx),
+                "const_to_op: Unexpected ConstKind {:?}",
+                val
+            ),
             ty::ConstKind::Value(val_val) => val_val,
         };
         // Other cases need layout.
@@ -664,7 +670,10 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                             .discriminants(def_id, *self.tcx)
                             .find(|(_, var)| var.val == discr_bits)
                     }
-                    _ => span_bug!(self.cur_span(), "tagged layout for non-adt non-generator"),
+                    _ => span_bug!(
+                        self.cur_span().to_span(*self.tcx),
+                        "tagged layout for non-adt non-generator"
+                    ),
                 }
                 .ok_or_else(|| err_ub!(InvalidTag(tag_val.erase_tag())))?;
                 // Return the cast value, and the index.

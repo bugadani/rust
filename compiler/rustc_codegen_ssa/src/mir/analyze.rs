@@ -388,7 +388,7 @@ pub fn cleanup_kinds(mir: &mir::Body<'_>) -> IndexVec<mir::BasicBlock, CleanupKi
             }
             Some(s) => {
                 if s != succ {
-                    span_bug!(
+                    span_source_bug!(
                         mir.span,
                         "funclet {:?} has 2 parents - {:?} and {:?}",
                         funclet,

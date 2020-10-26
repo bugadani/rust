@@ -42,7 +42,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                 block.terminator().kind
             );
             if let TerminatorKind::Call { fn_span, .. } = block.terminator().kind {
-                return SpanSource::Span(fn_span);
+                return fn_span;
             }
         }
         // This is a different terminator (such as `Drop`) or not a terminator at all

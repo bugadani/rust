@@ -30,8 +30,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         span_source: SpanSource,
         literal: &'tcx ty::Const<'tcx>,
     ) -> Operand<'tcx> {
-        let constant =
-            box Constant { span: span_source.to_span(self.hir.tcx()), user_ty: None, literal };
+        let constant = box Constant { span: span_source, user_ty: None, literal };
         Operand::Constant(constant)
     }
 
@@ -56,7 +55,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             source_info,
             temp,
             Constant {
-                span: source_info.span_source.to_span(self.hir.tcx()),
+                span: source_info.span_source,
                 user_ty: None,
                 literal: self.hir.usize_literal(value),
             },

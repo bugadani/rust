@@ -1,4 +1,5 @@
 use crate::transform::MirPass;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::TyCtxt;
 
@@ -124,7 +125,7 @@ impl<'tcx> MirPass<'tcx> for MatchBranchSimplification {
                                 tcx,
                                 switch_ty,
                                 crate::interpret::Scalar::from_uint(val, size),
-                                rustc_span::DUMMY_SP,
+                                SpanSource::DUMMY,
                             );
                             let op = if f_b { BinOp::Eq } else { BinOp::Ne };
                             let rhs = Rvalue::BinaryOp(op, Operand::Copy(discr.clone()), const_cmp);

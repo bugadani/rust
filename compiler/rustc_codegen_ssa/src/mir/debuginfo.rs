@@ -87,7 +87,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             // at the level above that.
             let span = rustc_span::hygiene::walk_chain(
                 source_info.span_source.to_span(self.cx.tcx()),
-                self.mir.span.ctxt(),
+                self.mir.span.to_span(self.cx.tcx()).ctxt(),
             );
             let scope = self.scope_metadata_for_loc(source_info.scope, span.lo());
             // Use span of the outermost expansion site, while keeping the original lexical scope.

@@ -412,7 +412,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         err: &mut DiagnosticBuilder<'a>,
         place_desc: &str,
         ty: Ty<'tcx>,
-        span: Option<Span>,
+        span: Option<SpanSource>,
         move_prefix: &str,
     ) {
         let message = format!(
@@ -420,7 +420,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             move_prefix, place_desc, ty,
         );
         if let Some(span) = span {
-            err.span_label(span, message);
+            err.span_label(span.to_span(self.infcx.tcx), message);
         } else {
             err.note(&message);
         }
@@ -546,25 +546,25 @@ pub(super) enum UseSpans<'tcx> {
         generator_kind: Option<GeneratorKind>,
         /// The span of the args of the closure, including the `move` keyword if
         /// it's present.
-        args_span: Span,
+        args_span: SpanSource,
         /// The span of the first use of the captured variable inside the closure.
-        var_span: Span,
+        var_span: SpanSource,
     },
     /// The access is caused by using a variable as the receiver of a method
     /// that takes 'self'
     FnSelfUse {
         /// The span of the variable being moved
-        var_span: Span,
+        var_span: SpanSource,
         /// The span of the method call on the variable
-        fn_call_span: Span,
+        fn_call_span: SpanSource,
         /// The definition span of the method being called
         fn_span: Span,
         kind: FnSelfUseKind<'tcx>,
     },
     /// This access is caused by a `match` or `if let` pattern.
-    PatUse(Span),
+    PatUse(SpanSource),
     /// This access has a single span associated to it: common case.
-    OtherUse(Span),
+    OtherUse(SpanSource),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -578,14 +578,14 @@ pub(super) enum FnSelfUseKind<'tcx> {
     DerefCoercion {
         /// The `Span` of the `Target` associated type
         /// in the `Deref` impl we are using.
-        deref_target: Span,
+        deref_target: SpanSource,
         /// The type `T::Deref` we are dereferencing to
         deref_target_ty: Ty<'tcx>,
     },
 }
 
 impl UseSpans<'_> {
-    pub(super) fn args_or_use(self) -> Span {
+    pub(super) fn args_or_use(self) -> SpanSource {
         match self {
             UseSpans::ClosureUse { args_span: span, .. }
             | UseSpans::PatUse(span)
@@ -597,7 +597,7 @@ impl UseSpans<'_> {
         }
     }
 
-    pub(super) fn var_or_use(self) -> Span {
+    pub(super) fn var_or_use(self) -> SpanSource {
         match self {
             UseSpans::ClosureUse { var_span: span, .. }
             | UseSpans::PatUse(span)
@@ -619,22 +619,24 @@ impl UseSpans<'_> {
     // Add a span label to the arguments of the closure, if it exists.
     pub(super) fn args_span_label(
         self,
+        tcx: TyCtxt<'tcx>,
         err: &mut DiagnosticBuilder<'_>,
         message: impl Into<String>,
     ) {
         if let UseSpans::ClosureUse { args_span, .. } = self {
-            err.span_label(args_span, message);
+            err.span_label(args_span.to_span(tcx), message);
         }
     }
 
     // Add a span label to the use of the captured variable, if it exists.
     pub(super) fn var_span_label(
         self,
+        tcx: TyCtxt<'tcx>,
         err: &mut DiagnosticBuilder<'_>,
         message: impl Into<String>,
     ) {
         if let UseSpans::ClosureUse { var_span, .. } = self {
-            err.span_label(var_span, message);
+            err.span_label(var_span.to_span(tcx), message);
         }
     }
 
@@ -773,11 +775,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
 
         let stmt = match self.body[location.block].statements.get(location.statement_index) {
             Some(stmt) => stmt,
-            None => {
-                return OtherUse(
-                    self.body.source_info(location).span_source.to_span(self.infcx.tcx),
-                );
-            }
+            None => return OtherUse(self.body.source_info(location).span_source),
         };
 
         debug!("move_spans: moved_place={:?} location={:?} stmt={:?}", moved_place, location, stmt);
@@ -798,9 +796,9 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
 
         let normal_ret =
             if moved_place.projection.iter().any(|p| matches!(p, ProjectionElem::Downcast(..))) {
-                PatUse(stmt.source_info.span_source.to_span(self.infcx.tcx))
+                PatUse(stmt.source_info.span_source)
             } else {
-                OtherUse(stmt.source_info.span_source.to_span(self.infcx.tcx))
+                OtherUse(stmt.source_info.span_source)
             };
 
         // We are trying to find MIR of the form:
@@ -866,7 +864,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                 if let Some(Ok(instance)) = deref_target {
                     let deref_target_ty = instance.ty(tcx, self.param_env);
                     Some(FnSelfUseKind::DerefCoercion {
-                        deref_target: tcx.def_span(instance.def_id()),
+                        deref_target: SpanSource::DefId(instance.def_id()),
                         deref_target_ty,
                     })
                 } else {
@@ -880,14 +878,14 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                 // This isn't a 'special' use of `self`
                 debug!("move_spans: method_did={:?}, fn_call_span={:?}", method_did, fn_call_span);
                 let implicit_into_iter = matches!(
-                    fn_call_span.desugaring_kind(),
+                    fn_call_span.to_span(self.infcx.tcx).desugaring_kind(),
                     Some(DesugaringKind::ForLoop(ForLoopLoc::IntoIter))
                 );
                 FnSelfUseKind::Normal { self_arg, implicit_into_iter }
             });
 
             return FnSelfUse {
-                var_span: stmt.source_info.span_source.to_span(self.infcx.tcx),
+                var_span: stmt.source_info.span_source,
                 fn_call_span,
                 fn_span: self
                     .infcx
@@ -907,8 +905,11 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     /// and originating from `maybe_closure_span`.
     pub(super) fn borrow_spans(&self, use_span: SpanSource, location: Location) -> UseSpans<'tcx> {
         use self::UseSpans::*;
-        let use_span = use_span.to_span(self.infcx.tcx);
-        debug!("borrow_spans: use_span={:?} location={:?}", use_span, location);
+        debug!(
+            "borrow_spans: use_span={:?} location={:?}",
+            use_span.to_span(self.infcx.tcx),
+            location
+        );
 
         let target = match self.body[location.block].statements.get(location.statement_index) {
             Some(&Statement { kind: StatementKind::Assign(box (ref place, _)), .. }) => {
@@ -949,7 +950,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                 }
             }
 
-            if use_span != stmt.source_info.span_source.to_span(self.infcx.tcx) {
+            if use_span != stmt.source_info.span_source {
                 break;
             }
         }
@@ -963,7 +964,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         def_id: DefId,
         target_place: PlaceRef<'tcx>,
         places: &Vec<Operand<'tcx>>,
-    ) -> Option<(Span, Option<GeneratorKind>, Span)> {
+    ) -> Option<(SpanSource, Option<GeneratorKind>, SpanSource)> {
         debug!(
             "closure_span: def_id={:?} target_place={:?} places={:?}",
             def_id, target_place, places
@@ -999,7 +1000,11 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                                 ty::UpvarCapture::ByValue(Some(span)) => span,
                                 _ => upvar.span,
                             };
-                        return Some((*args_span, generator_kind, usage_span));
+                        return Some((
+                            SpanSource::Span(*args_span),
+                            generator_kind,
+                            SpanSource::Span(usage_span),
+                        ));
                     }
                     _ => {}
                 }
