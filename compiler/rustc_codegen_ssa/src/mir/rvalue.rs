@@ -9,11 +9,11 @@ use crate::MemFlags;
 
 use rustc_apfloat::{ieee, Float, Round, Status};
 use rustc_hir::lang_items::LangItem;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir;
 use rustc_middle::ty::cast::{CastTy, IntTy};
 use rustc_middle::ty::layout::{HasTyCtxt, TyAndLayout};
 use rustc_middle::ty::{self, adjustment::PointerCast, Instance, Ty, TyCtxt};
-use rustc_span::source_map::{Span, DUMMY_SP};
 use rustc_span::symbol::sym;
 use rustc_target::abi::{Abi, Int, LayoutOf, Variants};
 
@@ -136,7 +136,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             }
 
             _ => {
-                assert!(self.rvalue_creates_operand(rvalue, DUMMY_SP));
+                assert!(self.rvalue_creates_operand(rvalue, SpanSource::DUMMY));
                 let (mut bx, temp) = self.codegen_rvalue_operand(bx, rvalue);
                 temp.val.store(&mut bx, dest);
                 bx
@@ -172,7 +172,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         rvalue: &mir::Rvalue<'tcx>,
     ) -> (Bx, OperandRef<'tcx, Bx::Value>) {
         assert!(
-            self.rvalue_creates_operand(rvalue, DUMMY_SP),
+            self.rvalue_creates_operand(rvalue, SpanSource::DUMMY),
             "cannot codegen {:?} to operand",
             rvalue,
         );
@@ -756,7 +756,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 }
 
 impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
-    pub fn rvalue_creates_operand(&self, rvalue: &mir::Rvalue<'tcx>, span: Span) -> bool {
+    pub fn rvalue_creates_operand(
+        &self,
+        rvalue: &mir::Rvalue<'tcx>,
+        span_source: SpanSource,
+    ) -> bool {
         match *rvalue {
             mir::Rvalue::Ref(..) |
             mir::Rvalue::AddressOf(..) |
@@ -774,7 +778,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             mir::Rvalue::Aggregate(..) => {
                 let ty = rvalue.ty(self.mir, self.cx.tcx());
                 let ty = self.monomorphize(&ty);
-                self.cx.spanned_layout_of(ty, span).is_zst()
+                self.cx.spanned_layout_of(ty, span_source.to_span(self.cx.tcx())).is_zst()
             }
         }
 

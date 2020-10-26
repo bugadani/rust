@@ -5,9 +5,10 @@ use crate::common::CodegenCx;
 use crate::llvm::debuginfo::DIScope;
 use crate::llvm::{self, Value};
 use rustc_codegen_ssa::traits::*;
+use rustc_middle::middle::lang_items::SpanSource;
 
 use rustc_data_structures::sync::Lrc;
-use rustc_span::{BytePos, Pos, SourceFile, SourceFileAndLine, Span};
+use rustc_span::{BytePos, Pos, SourceFile, SourceFileAndLine};
 
 /// A source code location used to generate debug information.
 pub struct DebugLoc {
@@ -45,8 +46,8 @@ impl CodegenCx<'ll, '_> {
         }
     }
 
-    pub fn create_debug_loc(&self, scope: &'ll DIScope, span: Span) -> &'ll Value {
-        let DebugLoc { line, col, .. } = self.lookup_debug_loc(span.lo());
+    pub fn create_debug_loc(&self, scope: &'ll DIScope, span: SpanSource) -> &'ll Value {
+        let DebugLoc { line, col, .. } = self.lookup_debug_loc(span.to_span(self.tcx).lo());
 
         unsafe {
             llvm::LLVMRustDIBuilderCreateDebugLocation(

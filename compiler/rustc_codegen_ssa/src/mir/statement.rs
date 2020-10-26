@@ -29,7 +29,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                         LocalRef::Operand(Some(op)) => {
                             if !op.layout.is_zst() {
                                 span_bug!(
-                                    statement.source_info.span,
+                                    statement.source_info.span_source.to_span(bx.tcx()),
                                     "operand {:?} already assigned",
                                     rvalue
                                 );
@@ -97,12 +97,12 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                         &asm.asm,
                         outputs,
                         input_vals,
-                        statement.source_info.span,
+                        statement.source_info.span_source,
                     );
                     if !res {
                         struct_span_err!(
                             bx.sess(),
-                            statement.source_info.span,
+                            statement.source_info.span_source.to_span(bx.tcx()),
                             E0668,
                             "malformed inline assembly"
                         )

@@ -11,6 +11,7 @@ use rustc_index::vec::IndexVec;
 use rustc_middle::hir;
 use rustc_middle::hir::map::blocks::FnLikeNode;
 use rustc_middle::ich::StableHashingContext;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir;
 use rustc_middle::mir::coverage::*;
 use rustc_middle::mir::visit::Visitor;
@@ -340,7 +341,7 @@ impl CoverageStatement {
                 let stmt = &mir_body.basic_blocks()[bb].statements[stmt_index];
                 format!(
                     "{}: @{}[{}]: {:?}",
-                    spanview::source_range_no_file(tcx, &span),
+                    spanview::source_range_no_file(tcx, &SpanSource::Span(span)),
                     bb.index(),
                     stmt_index,
                     stmt
@@ -350,7 +351,7 @@ impl CoverageStatement {
                 let term = mir_body.basic_blocks()[bb].terminator();
                 format!(
                     "{}: @{}.{}: {:?}",
-                    spanview::source_range_no_file(tcx, &span),
+                    spanview::source_range_no_file(tcx, &SpanSource::Span(span)),
                     bb.index(),
                     term_type(&term.kind),
                     term.kind
@@ -698,12 +699,12 @@ impl<'a, 'tcx> Instrumentor<'a, 'tcx> {
                     .iter()
                     .enumerate()
                     .filter_map(move |(index, statement)| {
-                        filtered_statement_span(statement, body_span).map(|span| {
+                        filtered_statement_span(self.tcx, statement, body_span).map(|span| {
                             CoverageSpan::for_statement(statement, span, bcb, bb, index)
                         })
                     })
                     .chain(
-                        filtered_terminator_span(data.terminator(), body_span)
+                        filtered_terminator_span(self.tcx, data.terminator(), body_span)
                             .map(|span| CoverageSpan::for_terminator(span, bcb, bb)),
                     )
             })
@@ -1084,7 +1085,11 @@ impl<'a> CoverageSpanRefinery<'a> {
     }
 }
 
-fn filtered_statement_span(statement: &'a Statement<'tcx>, body_span: Span) -> Option<Span> {
+fn filtered_statement_span(
+    tcx: TyCtxt<'tcx>,
+    statement: &'a Statement<'tcx>,
+    body_span: Span,
+) -> Option<Span> {
     match statement.kind {
         // These statements have spans that are often outside the scope of the executed source code
         // for their parent `BasicBlock`.
@@ -1126,12 +1131,16 @@ fn filtered_statement_span(statement: &'a Statement<'tcx>, body_span: Span) -> O
         | StatementKind::LlvmInlineAsm(_)
         | StatementKind::Retag(_, _)
         | StatementKind::AscribeUserType(_, _) => {
-            Some(source_info_span(&statement.source_info, body_span))
+            Some(source_info_span(tcx, &statement.source_info, body_span))
         }
     }
 }
 
-fn filtered_terminator_span(terminator: &'a Terminator<'tcx>, body_span: Span) -> Option<Span> {
+fn filtered_terminator_span(
+    tcx: TyCtxt<'tcx>,
+    terminator: &'a Terminator<'tcx>,
+    body_span: Span,
+) -> Option<Span> {
     match terminator.kind {
         // These terminators have spans that don't positively contribute to computing a reasonable
         // span of actually executed source code. (For example, SwitchInt terminators extracted from
@@ -1156,14 +1165,15 @@ fn filtered_terminator_span(terminator: &'a Terminator<'tcx>, body_span: Span) -
         | TerminatorKind::GeneratorDrop
         | TerminatorKind::FalseUnwind { .. }
         | TerminatorKind::InlineAsm { .. } => {
-            Some(source_info_span(&terminator.source_info, body_span))
+            Some(source_info_span(tcx, &terminator.source_info, body_span))
         }
     }
 }
 
 #[inline(always)]
-fn source_info_span(source_info: &SourceInfo, body_span: Span) -> Span {
-    let span = original_sp(source_info.span, body_span).with_ctxt(SyntaxContext::root());
+fn source_info_span(tcx: TyCtxt<'tcx>, source_info: &SourceInfo, body_span: Span) -> Span {
+    let span = original_sp(source_info.span_source.to_span(tcx), body_span)
+        .with_ctxt(SyntaxContext::root());
     if body_span.contains(span) { span } else { body_span }
 }
 

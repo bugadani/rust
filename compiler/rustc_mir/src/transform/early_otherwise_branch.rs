@@ -59,7 +59,7 @@ impl<'tcx> MirPass<'tcx> for EarlyOtherwiseBranch {
 
             // create temp to store second discriminant in
             let discr_type = opt_to_apply.infos[0].second_switch_info.discr_ty;
-            let discr_span = opt_to_apply.infos[0].second_switch_info.discr_source_info.span;
+            let discr_span = opt_to_apply.infos[0].second_switch_info.discr_source_info.span_source;
             let second_discriminant_temp = patch.new_temp(discr_type, discr_span);
 
             patch.add_statement(

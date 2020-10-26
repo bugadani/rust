@@ -284,13 +284,13 @@ impl TransformVisitor<'tcx> {
 
     // Create a statement which reads the discriminant into a temporary
     fn get_discr(&self, body: &mut Body<'tcx>) -> (Statement<'tcx>, Place<'tcx>) {
-        let temp_decl = LocalDecl::new(self.discr_ty, body.span).internal();
+        let temp_decl = LocalDecl::new(self.discr_ty, SpanSource::Span(body.span)).internal();
         let local_decls_len = body.local_decls.push(temp_decl);
         let temp = Place::from(local_decls_len);
 
         let self_place = Place::from(SELF_ARG);
         let assign = Statement {
-            source_info: SourceInfo::outermost(body.span),
+            source_info: SourceInfo::outermost(SpanSource::Span(body.span)),
             kind: StatementKind::Assign(box (temp, Rvalue::Discriminant(self_place))),
         };
         (assign, temp)
@@ -418,7 +418,7 @@ fn replace_local<'tcx>(
     body: &mut Body<'tcx>,
     tcx: TyCtxt<'tcx>,
 ) -> Local {
-    let new_decl = LocalDecl::new(ty, body.span);
+    let new_decl = LocalDecl::new(ty, SpanSource::Span(body.span));
     let new_local = body.local_decls.push(new_decl);
     body.local_decls.swap(local, new_local);
 
@@ -791,9 +791,9 @@ fn compute_layout<'tcx>(
     const RESERVED_VARIANTS: usize = 3;
     let body_span = body.source_scopes[OUTERMOST_SOURCE_SCOPE].span;
     let mut variant_source_info: IndexVec<VariantIdx, SourceInfo> = [
-        SourceInfo::outermost(body_span.shrink_to_lo()),
-        SourceInfo::outermost(body_span.shrink_to_hi()),
-        SourceInfo::outermost(body_span.shrink_to_hi()),
+        SourceInfo::outermost(SpanSource::Span(body_span.shrink_to_lo())),
+        SourceInfo::outermost(SpanSource::Span(body_span.shrink_to_hi())),
+        SourceInfo::outermost(SpanSource::Span(body_span.shrink_to_hi())),
     ]
     .iter()
     .copied()
@@ -847,7 +847,7 @@ fn insert_switch<'tcx>(
         targets: switch_targets,
     };
 
-    let source_info = SourceInfo::outermost(body.span);
+    let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
     body.basic_blocks_mut().raw.insert(
         0,
         BasicBlockData {
@@ -921,7 +921,7 @@ fn create_generator_drop_shim<'tcx>(
     let mut body = body.clone();
     body.arg_count = 1; // make sure the resume argument is not included here
 
-    let source_info = SourceInfo::outermost(body.span);
+    let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
 
     let mut cases = create_cases(&mut body, transform, Operation::Drop);
 
@@ -972,7 +972,7 @@ fn create_generator_drop_shim<'tcx>(
 }
 
 fn insert_term_block<'tcx>(body: &mut Body<'tcx>, kind: TerminatorKind<'tcx>) -> BasicBlock {
-    let source_info = SourceInfo::outermost(body.span);
+    let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
     body.basic_blocks_mut().push(BasicBlockData {
         statements: Vec::new(),
         terminator: Some(Terminator { source_info, kind }),
@@ -998,7 +998,7 @@ fn insert_panic_block<'tcx>(
         cleanup: None,
     };
 
-    let source_info = SourceInfo::outermost(body.span);
+    let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
     body.basic_blocks_mut().push(BasicBlockData {
         statements: Vec::new(),
         terminator: Some(Terminator { source_info, kind: term }),
@@ -1075,7 +1075,7 @@ fn create_generator_resume_function<'tcx>(
 
     // Poison the generator when it unwinds
     if can_unwind {
-        let source_info = SourceInfo::outermost(body.span);
+        let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
         let poison_block = body.basic_blocks_mut().push(BasicBlockData {
             statements: vec![transform.set_discr(VariantIdx::new(POISONED), source_info)],
             terminator: Some(Terminator { source_info, kind: TerminatorKind::Resume }),
@@ -1147,7 +1147,7 @@ fn insert_clean_drop(body: &mut Body<'_>) -> BasicBlock {
 
     let term =
         TerminatorKind::Drop { place: Place::from(SELF_ARG), target: return_block, unwind: None };
-    let source_info = SourceInfo::outermost(body.span);
+    let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
 
     // Create a block to destroy an unresumed generators. This can only destroy upvars.
     body.basic_blocks_mut().push(BasicBlockData {
@@ -1178,7 +1178,7 @@ fn create_cases<'tcx>(
     transform: &TransformVisitor<'tcx>,
     operation: Operation,
 ) -> Vec<(usize, BasicBlock)> {
-    let source_info = SourceInfo::outermost(body.span);
+    let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
 
     transform
         .suspension_points
@@ -1286,7 +1286,7 @@ impl<'tcx> MirPass<'tcx> for StateTransform {
             replace_local(resume_local, body.local_decls[resume_local].ty, body, tcx);
 
         // When first entering the generator, move the resume argument into its new local.
-        let source_info = SourceInfo::outermost(body.span);
+        let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
         let stmts = &mut body.basic_blocks_mut()[BasicBlock::new(0)].statements;
         stmts.insert(
             0,

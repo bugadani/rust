@@ -11,9 +11,9 @@ use crate::util::elaborate_drops::{DropElaborator, DropFlagMode, DropStyle};
 use crate::util::patch::MirPatch;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_index::bit_set::BitSet;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, TyCtxt};
-use rustc_span::Span;
 use rustc_target::abi::VariantIdx;
 use std::fmt;
 
@@ -267,11 +267,13 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         self.env.param_env
     }
 
-    fn create_drop_flag(&mut self, index: MovePathIndex, span: Span) {
+    fn create_drop_flag(&mut self, index: MovePathIndex, span_source: SpanSource) {
         let tcx = self.tcx;
         let patch = &mut self.patch;
         debug!("create_drop_flag({:?})", self.body.span);
-        self.drop_flags.entry(index).or_insert_with(|| patch.new_internal(tcx.types.bool, span));
+        self.drop_flags
+            .entry(index)
+            .or_insert_with(|| patch.new_internal(tcx.types.bool, span_source));
     }
 
     fn drop_flag(&mut self, index: MovePathIndex) -> Option<Place<'tcx>> {
@@ -314,7 +316,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                     let (_maybe_live, maybe_dead) = self.init_data.maybe_live_dead(parent);
                     if maybe_dead {
                         span_bug!(
-                            terminator.source_info.span,
+                            terminator.source_info.span_source.to_span(self.tcx),
                             "drop of untracked, uninitialized value {:?}, place {:?} ({:?})",
                             bb,
                             place,
@@ -335,7 +337,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                     (maybe_live, maybe_dead)
                 );
                 if maybe_live && maybe_dead {
-                    self.create_drop_flag(child, terminator.source_info.span)
+                    self.create_drop_flag(child, terminator.source_info.span_source)
                 }
             });
         }
@@ -366,7 +368,7 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
                         ),
                         LookupResult::Parent(..) => {
                             span_bug!(
-                                terminator.source_info.span,
+                                terminator.source_info.span_source.to_span(self.tcx),
                                 "drop of untracked value {:?}",
                                 bb
                             );
@@ -467,9 +469,9 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
         }
     }
 
-    fn constant_bool(&self, span: Span, val: bool) -> Rvalue<'tcx> {
+    fn constant_bool(&self, span_source: SpanSource, val: bool) -> Rvalue<'tcx> {
         Rvalue::Use(Operand::Constant(Box::new(Constant {
-            span,
+            span: span_source.to_span(self.tcx), // FIXME
             user_ty: None,
             literal: ty::Const::from_bool(self.tcx, val),
         })))
@@ -477,16 +479,16 @@ impl<'b, 'tcx> ElaborateDropsCtxt<'b, 'tcx> {
 
     fn set_drop_flag(&mut self, loc: Location, path: MovePathIndex, val: DropFlagState) {
         if let Some(&flag) = self.drop_flags.get(&path) {
-            let span = self.patch.source_info_for_location(self.body, loc).span;
-            let val = self.constant_bool(span, val.value());
+            let span_source = self.patch.source_info_for_location(self.body, loc).span_source;
+            let val = self.constant_bool(span_source, val.value());
             self.patch.add_assign(loc, Place::from(flag), val);
         }
     }
 
     fn drop_flags_on_init(&mut self) {
         let loc = Location::START;
-        let span = self.patch.source_info_for_location(self.body, loc).span;
-        let false_ = self.constant_bool(span, false);
+        let span_source = self.patch.source_info_for_location(self.body, loc).span_source;
+        let false_ = self.constant_bool(span_source, false);
         for flag in self.drop_flags.values() {
             self.patch.add_assign(loc, Place::from(*flag), false_.clone());
         }

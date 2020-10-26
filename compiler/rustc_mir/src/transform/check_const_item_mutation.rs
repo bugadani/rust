@@ -72,11 +72,16 @@ impl<'a, 'tcx> ConstMutationChecker<'a, 'tcx> {
             .assert_crate_local()
             .lint_root;
 
-        self.tcx.struct_span_lint_hir(CONST_ITEM_MUTATION, lint_root, source_info.span, |lint| {
-            decorate(lint)
-                .span_note(self.tcx.def_span(const_item), "`const` item defined here")
-                .emit()
-        });
+        self.tcx.struct_span_lint_hir(
+            CONST_ITEM_MUTATION,
+            lint_root,
+            source_info.span_source.to_span(self.tcx),
+            |lint| {
+                decorate(lint)
+                    .span_note(self.tcx.def_span(const_item), "`const` item defined here")
+                    .emit()
+            },
+        );
     }
 }
 

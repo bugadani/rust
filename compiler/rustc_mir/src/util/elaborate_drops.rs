@@ -629,13 +629,13 @@ where
                         tcx,
                         drop_fn.def_id,
                         substs,
-                        self.source_info.span,
+                        self.source_info.span_source.to_span(tcx),
                     ),
                     args: vec![Operand::Move(Place::from(ref_place))],
                     destination: Some((unit_temp, succ)),
                     cleanup: unwind.into_option(),
                     from_hir_call: true,
-                    fn_span: self.source_info.span,
+                    fn_span: self.source_info.span_source.to_span(tcx), // FIXME
                 },
                 source_info: self.source_info,
             }),
@@ -948,8 +948,10 @@ where
     ) -> BasicBlock {
         let tcx = self.tcx();
         let unit_temp = Place::from(self.new_temp(tcx.mk_unit()));
-        let free_func =
-            tcx.require_lang_item(LangItem::BoxFree, Some(SpanSource::Span(self.source_info.span)));
+        let free_func = tcx.require_lang_item(
+            LangItem::BoxFree,
+            Some(SpanSource::Span(self.source_info.span_source.to_span(tcx))),
+        );
         let args = adt.variants[VariantIdx::new(0)]
             .fields
             .iter()
@@ -962,12 +964,17 @@ where
             .collect();
 
         let call = TerminatorKind::Call {
-            func: Operand::function_handle(tcx, free_func, substs, self.source_info.span),
+            func: Operand::function_handle(
+                tcx,
+                free_func,
+                substs,
+                self.source_info.span_source.to_span(tcx),
+            ),
             args,
             destination: Some((unit_temp, target)),
             cleanup: None,
             from_hir_call: false,
-            fn_span: self.source_info.span,
+            fn_span: self.source_info.span_source.to_span(tcx), // FIXME
         }; // FIXME(#43234)
         let free_block = self.new_block(unwind, call);
 
@@ -1024,12 +1031,12 @@ where
     }
 
     fn new_temp(&mut self, ty: Ty<'tcx>) -> Local {
-        self.elaborator.patch().new_temp(ty, self.source_info.span)
+        self.elaborator.patch().new_temp(ty, self.source_info.span_source)
     }
 
     fn constant_usize(&self, val: u16) -> Operand<'tcx> {
         Operand::Constant(box Constant {
-            span: self.source_info.span,
+            span: self.source_info.span_source.to_span(self.tcx()), // FIXME
             user_ty: None,
             literal: ty::Const::from_usize(self.tcx(), val.into()),
         })

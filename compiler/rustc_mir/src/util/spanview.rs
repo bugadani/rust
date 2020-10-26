@@ -1,5 +1,6 @@
 use rustc_hir::def_id::DefId;
 use rustc_middle::hir;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::config::MirSpanview;
@@ -226,8 +227,9 @@ where
 }
 
 /// Format a string showing the start line and column, and end line and column within a file.
-pub fn source_range_no_file<'tcx>(tcx: TyCtxt<'tcx>, span: &Span) -> String {
+pub fn source_range_no_file<'tcx>(tcx: TyCtxt<'tcx>, span_source: &SpanSource) -> String {
     let source_map = tcx.sess.source_map();
+    let span = span_source.to_span(tcx);
     let start = source_map.lookup_char_pos(span.lo());
     let end = source_map.lookup_char_pos(span.hi());
     format!("{}:{}-{}:{}", start.line, start.col.to_usize() + 1, end.line, end.col.to_usize() + 1)
@@ -277,7 +279,7 @@ fn statement_span_viewable<'tcx>(
     i: usize,
     statement: &Statement<'tcx>,
 ) -> Option<SpanViewable> {
-    let span = statement.source_info.span;
+    let span = statement.source_info.span_source.to_span(tcx);
     if !body_span.contains(span) {
         return None;
     }
@@ -293,7 +295,7 @@ fn terminator_span_viewable<'tcx>(
     data: &BasicBlockData<'tcx>,
 ) -> Option<SpanViewable> {
     let term = data.terminator();
-    let span = term.source_info.span;
+    let span = term.source_info.span_source.to_span(tcx);
     if !body_span.contains(span) {
         return None;
     }
@@ -308,7 +310,7 @@ fn block_span_viewable<'tcx>(
     bb: BasicBlock,
     data: &BasicBlockData<'tcx>,
 ) -> Option<SpanViewable> {
-    let span = compute_block_span(data, body_span);
+    let span = compute_block_span(tcx, data, body_span);
     if !body_span.contains(span) {
         return None;
     }
@@ -317,9 +319,16 @@ fn block_span_viewable<'tcx>(
     Some(SpanViewable { bb, span, id, tooltip })
 }
 
-fn compute_block_span<'tcx>(data: &BasicBlockData<'tcx>, body_span: Span) -> Span {
-    let mut span = data.terminator().source_info.span;
-    for statement_span in data.statements.iter().map(|statement| statement.source_info.span) {
+fn compute_block_span<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    data: &BasicBlockData<'tcx>,
+    body_span: Span,
+) -> Span {
+    let mut span = data.terminator().source_info.span_source.to_span(tcx);
+    for statement_span_source in
+        data.statements.iter().map(|statement| statement.source_info.span_source)
+    {
+        let statement_span = statement_span_source.to_span(tcx);
         // Only combine Spans from the root context, and within the function's body_span.
         if statement_span.ctxt() == SyntaxContext::root() && body_span.contains(statement_span) {
             span = span.to(statement_span);
@@ -625,7 +634,7 @@ fn tooltip<'tcx>(
     let mut text = Vec::new();
     text.push(format!("{}: {}:", spanview_id, &source_map.span_to_string(span)));
     for statement in statements {
-        let source_range = source_range_no_file(tcx, &statement.source_info.span);
+        let source_range = source_range_no_file(tcx, &statement.source_info.span_source);
         text.push(format!(
             "\n{}{}: {}: {}",
             TOOLTIP_INDENT,
@@ -635,7 +644,7 @@ fn tooltip<'tcx>(
         ));
     }
     if let Some(term) = terminator {
-        let source_range = source_range_no_file(tcx, &term.source_info.span);
+        let source_range = source_range_no_file(tcx, &term.source_info.span_source);
         text.push(format!(
             "\n{}{}: {}: {:?}",
             TOOLTIP_INDENT,

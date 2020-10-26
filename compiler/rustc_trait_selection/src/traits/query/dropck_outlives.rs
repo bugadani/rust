@@ -41,7 +41,6 @@ impl<'cx, 'tcx> AtExt<'tcx> for At<'cx, 'tcx> {
 
         let mut orig_values = OriginalQueryValues::default();
         let c_ty = self.infcx.canonicalize_query(&self.param_env.and(ty), &mut orig_values);
-        let span = self.cause.span_source.to_span(tcx);
         debug!("c_ty = {:?}", c_ty);
         if let Ok(result) = &tcx.dropck_outlives(c_ty) {
             if result.is_proven() {
@@ -54,7 +53,8 @@ impl<'cx, 'tcx> AtExt<'tcx> for At<'cx, 'tcx> {
                     )
                 {
                     let ty = self.infcx.resolve_vars_if_possible(&ty);
-                    let kinds = value.into_kinds_reporting_overflows(tcx, span, ty);
+                    let kinds =
+                        value.into_kinds_reporting_overflows(tcx, self.cause.span_source, ty);
                     return InferOk { value: kinds, obligations };
                 }
             }
@@ -64,6 +64,7 @@ impl<'cx, 'tcx> AtExt<'tcx> for At<'cx, 'tcx> {
         // - unresolved inference variables at the end of typeck
         // - non well-formed types where projections cannot be resolved
         // Either of these should have created an error before.
+        let span = self.cause.span_source.to_span(tcx);
         tcx.sess.delay_span_bug(span, "dtorck encountered internal error");
 
         InferOk { value: vec![], obligations: vec![] }

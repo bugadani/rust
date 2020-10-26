@@ -311,7 +311,7 @@ impl<'b, 'a, 'tcx> Gatherer<'b, 'a, 'tcx> {
             }
             StatementKind::SetDiscriminant { .. } => {
                 span_bug!(
-                    stmt.source_info.span,
+                    stmt.source_info.span_source.to_span(self.builder.tcx),
                     "SetDiscriminant should not exist during borrowck"
                 );
             }

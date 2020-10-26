@@ -6,8 +6,9 @@ use crate::glue;
 use crate::traits::*;
 use crate::MemFlags;
 
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, Ty, TyCtxt};
-use rustc_span::{sym, Span};
+use rustc_span::sym;
 use rustc_target::abi::call::{FnAbi, PassMode};
 
 fn copy_intrinsic<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>>(
@@ -54,7 +55,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         fn_abi: &FnAbi<'tcx, Ty<'tcx>>,
         args: &[OperandRef<'tcx, Bx::Value>],
         llresult: Bx::Value,
-        span: Span,
+        span_source: SpanSource,
     ) {
         let callee_ty = instance.ty(bx.tcx(), ty::ParamEnv::reveal_all());
 
@@ -312,7 +313,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     None => {
                         span_invalid_monomorphization_error(
                             bx.tcx().sess,
-                            span,
+                            span_source.to_span(bx.tcx()),
                             &format!(
                                 "invalid monomorphization of `{}` intrinsic: \
                                       expected basic integer type, found `{}`",
@@ -336,7 +337,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     None => {
                         span_invalid_monomorphization_error(
                             bx.tcx().sess,
-                            span,
+                            span_source.to_span(bx.tcx()),
                             &format!(
                                 "invalid monomorphization of `{}` intrinsic: \
                                       expected basic float type, found `{}`",
@@ -352,7 +353,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 if float_type_width(arg_tys[0]).is_none() {
                     span_invalid_monomorphization_error(
                         bx.tcx().sess,
-                        span,
+                        span_source.to_span(bx.tcx()),
                         &format!(
                             "invalid monomorphization of `float_to_int_unchecked` \
                                   intrinsic: expected basic float type, \
@@ -367,7 +368,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     None => {
                         span_invalid_monomorphization_error(
                             bx.tcx().sess,
-                            span,
+                            span_source.to_span(bx.tcx()),
                             &format!(
                                 "invalid monomorphization of `float_to_int_unchecked` \
                                       intrinsic:  expected basic integer type, \
@@ -389,7 +390,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 if ret_ty.is_integral() {
                     args[0].deref(bx.cx()).codegen_get_discr(bx, ret_ty)
                 } else {
-                    span_bug!(span, "Invalid discriminant type for `{:?}`", arg_tys[0])
+                    span_bug!(
+                        span_source.to_span(bx.tcx()),
+                        "Invalid discriminant type for `{:?}`",
+                        arg_tys[0]
+                    )
                 }
             }
 
@@ -425,7 +430,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 let invalid_monomorphization = |ty| {
                     span_invalid_monomorphization_error(
                         bx.tcx().sess,
-                        span,
+                        span_source.to_span(bx.tcx()),
                         &format!(
                             "invalid monomorphization of `{}` intrinsic: \
                                   expected basic integer type, found `{}`",
@@ -555,7 +560,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 
             _ => {
                 // Need to use backend-specific things in the implementation.
-                bx.codegen_intrinsic_call(instance, fn_abi, args, llresult, span);
+                bx.codegen_intrinsic_call(instance, fn_abi, args, llresult, span_source);
                 return;
             }
         };

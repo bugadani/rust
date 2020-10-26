@@ -72,7 +72,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                         )
                     }
                     _ => span_bug!(
-                        terminator.source_info.span,
+                        terminator.source_info.span_source.to_span(self.tcx.tcx),
                         "invalid callee of type {:?}",
                         func.layout.ty
                     ),
@@ -86,7 +86,10 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                 // Sanity-check that `eval_fn_call` either pushed a new frame or
                 // did a jump to another block.
                 if self.frame_idx() == old_stack && self.frame().loc == old_loc {
-                    span_bug!(terminator.source_info.span, "evaluating this call made no progress");
+                    span_bug!(
+                        terminator.source_info.span_source.to_span(self.tcx.tcx),
+                        "evaluating this call made no progress"
+                    );
                 }
             }
 
@@ -133,7 +136,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
             | FalseUnwind { .. }
             | Yield { .. }
             | GeneratorDrop => span_bug!(
-                terminator.source_info.span,
+                terminator.source_info.span_source.to_span(self.tcx.tcx),
                 "{:#?} should have been eliminated by MIR pass",
                 terminator.kind
             ),

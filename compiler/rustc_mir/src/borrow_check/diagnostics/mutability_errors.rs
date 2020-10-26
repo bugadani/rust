@@ -1,6 +1,7 @@
 use rustc_hir as hir;
 use rustc_hir::Node;
 use rustc_index::vec::Idx;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::{self, ClearCrossCrate, Local, LocalDecl, LocalInfo, Location};
 use rustc_middle::mir::{Mutability, Place, PlaceRef, ProjectionElem};
 use rustc_middle::ty::{self, Ty, TyCtxt};
@@ -165,7 +166,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                 act = "borrow as mutable";
                 acted_on = "borrowed as mutable";
 
-                let borrow_spans = self.borrow_spans(span, location);
+                let borrow_spans = self.borrow_spans(SpanSource::Span(span), location);
                 let borrow_span = borrow_spans.args_or_use();
                 err = self.cannot_borrow_path_as_mutable_because(borrow_span, &item_msg, &reason);
                 borrow_spans.var_span_label(
@@ -236,7 +237,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
 
                 err.span_label(span, format!("cannot {ACT}", ACT = act));
                 err.span_suggestion(
-                    local_decl.source_info.span,
+                    local_decl.source_info.span_source.to_span(self.infcx.tcx),
                     "consider changing this to be mutable",
                     format!("mut {}", self.local_names[local].unwrap()),
                     Applicability::MachineApplicable,
@@ -334,9 +335,12 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                             ))) => {
                                 // check if the RHS is from desugaring
                                 let locations = self.body.find_assignments(local);
-                                let opt_assignment_rhs_span = locations
-                                    .first()
-                                    .map(|&location| self.body.source_info(location).span);
+                                let opt_assignment_rhs_span = locations.first().map(|&location| {
+                                    self.body
+                                        .source_info(location)
+                                        .span_source
+                                        .to_span(self.infcx.tcx)
+                                });
                                 let opt_desugaring_kind =
                                     opt_assignment_rhs_span.and_then(|span| span.desugaring_kind());
                                 match opt_desugaring_kind {
@@ -370,7 +374,8 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                                     ..
                                 },
                             ))) => {
-                                let pattern_span = local_decl.source_info.span;
+                                let pattern_span =
+                                    local_decl.source_info.span_source.to_span(self.infcx.tcx);
                                 suggest_ref_mut(self.infcx.tcx, pattern_span)
                                     .map(|replacement| (true, pattern_span, replacement))
                             }
@@ -589,7 +594,7 @@ fn suggest_ampmut_self<'tcx>(
     tcx: TyCtxt<'tcx>,
     local_decl: &mir::LocalDecl<'tcx>,
 ) -> (Span, String) {
-    let sp = local_decl.source_info.span;
+    let sp = local_decl.source_info.span_source.to_span(tcx);
     (
         sp,
         match tcx.sess.source_map().span_to_snippet(sp) {
@@ -648,7 +653,7 @@ fn suggest_ampmut<'tcx>(
 
         // otherwise, just highlight the span associated with
         // the (MIR) LocalDecl.
-        None => local_decl.source_info.span,
+        None => local_decl.source_info.span_source.to_span(tcx),
     };
 
     if let Ok(src) = tcx.sess.source_map().span_to_snippet(highlight_span) {

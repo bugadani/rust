@@ -342,16 +342,21 @@ impl<'a, 'tcx> AbstractConstBuilder<'a, 'tcx> {
         debug!("AbstractConstBuilder: stmt={:?}", stmt);
         match stmt.kind {
             StatementKind::Assign(box (ref place, ref rvalue)) => {
-                let local = self.place_to_local(stmt.source_info.span, place)?;
+                let local =
+                    self.place_to_local(stmt.source_info.span_source.to_span(self.tcx), place)?;
                 match *rvalue {
                     Rvalue::Use(ref operand) => {
-                        self.locals[local] =
-                            self.operand_to_node(stmt.source_info.span, operand)?;
+                        self.locals[local] = self.operand_to_node(
+                            stmt.source_info.span_source.to_span(self.tcx),
+                            operand,
+                        )?;
                         Ok(())
                     }
                     Rvalue::BinaryOp(op, ref lhs, ref rhs) if Self::check_binop(op) => {
-                        let lhs = self.operand_to_node(stmt.source_info.span, lhs)?;
-                        let rhs = self.operand_to_node(stmt.source_info.span, rhs)?;
+                        let lhs = self
+                            .operand_to_node(stmt.source_info.span_source.to_span(self.tcx), lhs)?;
+                        let rhs = self
+                            .operand_to_node(stmt.source_info.span_source.to_span(self.tcx), rhs)?;
                         self.locals[local] = self.nodes.push(Node::Binop(op, lhs, rhs));
                         if op.is_checkable() {
                             bug!("unexpected unchecked checkable binary operation");
@@ -360,23 +365,34 @@ impl<'a, 'tcx> AbstractConstBuilder<'a, 'tcx> {
                         }
                     }
                     Rvalue::CheckedBinaryOp(op, ref lhs, ref rhs) if Self::check_binop(op) => {
-                        let lhs = self.operand_to_node(stmt.source_info.span, lhs)?;
-                        let rhs = self.operand_to_node(stmt.source_info.span, rhs)?;
+                        let lhs = self
+                            .operand_to_node(stmt.source_info.span_source.to_span(self.tcx), lhs)?;
+                        let rhs = self
+                            .operand_to_node(stmt.source_info.span_source.to_span(self.tcx), rhs)?;
                         self.locals[local] = self.nodes.push(Node::Binop(op, lhs, rhs));
                         self.checked_op_locals.insert(local);
                         Ok(())
                     }
                     Rvalue::UnaryOp(op, ref operand) if Self::check_unop(op) => {
-                        let operand = self.operand_to_node(stmt.source_info.span, operand)?;
+                        let operand = self.operand_to_node(
+                            stmt.source_info.span_source.to_span(self.tcx),
+                            operand,
+                        )?;
                         self.locals[local] = self.nodes.push(Node::UnaryOp(op, operand));
                         Ok(())
                     }
-                    _ => self.error(Some(stmt.source_info.span), "unsupported rvalue")?,
+                    _ => self.error(
+                        Some(stmt.source_info.span_source.to_span(self.tcx)),
+                        "unsupported rvalue",
+                    )?,
                 }
             }
             // These are not actually relevant for us here, so we can ignore them.
             StatementKind::StorageLive(_) | StatementKind::StorageDead(_) => Ok(()),
-            _ => self.error(Some(stmt.source_info.span), "unsupported statement")?,
+            _ => self.error(
+                Some(stmt.source_info.span_source.to_span(self.tcx)),
+                "unsupported statement",
+            )?,
         }
     }
 
@@ -416,7 +432,12 @@ impl<'a, 'tcx> AbstractConstBuilder<'a, 'tcx> {
                 let func = self.operand_to_node(fn_span, func)?;
                 let args = self.tcx.arena.alloc_from_iter(
                     args.iter()
-                        .map(|arg| self.operand_to_node(terminator.source_info.span, arg))
+                        .map(|arg| {
+                            self.operand_to_node(
+                                terminator.source_info.span_source.to_span(self.tcx),
+                                arg,
+                            )
+                        })
                         .collect::<Result<Vec<NodeId>, _>>()?,
                 );
                 self.locals[local] = self.nodes.push(Node::FunctionCall(func, args));
@@ -441,9 +462,15 @@ impl<'a, 'tcx> AbstractConstBuilder<'a, 'tcx> {
                     }
                 }
 
-                self.error(Some(terminator.source_info.span), "unsupported assertion")?;
+                self.error(
+                    Some(terminator.source_info.span_source.to_span(self.tcx)),
+                    "unsupported assertion",
+                )?;
             }
-            _ => self.error(Some(terminator.source_info.span), "unsupported terminator")?,
+            _ => self.error(
+                Some(terminator.source_info.span_source.to_span(self.tcx)),
+                "unsupported terminator",
+            )?,
         }
     }
 

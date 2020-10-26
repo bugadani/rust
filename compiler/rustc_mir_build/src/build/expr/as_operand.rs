@@ -127,7 +127,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let this = self;
 
         if let ExprKind::Scope { region_scope, lint_level, value } = expr.kind {
-            let source_info = this.source_info(expr.span);
+            let source_info = this.source_info(SpanSource::Span(expr.span));
             let region_scope = (region_scope, source_info);
             return this
                 .in_scope(region_scope, lint_level, |this| this.as_operand(block, scope, value));
@@ -157,7 +157,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let this = self;
 
         if let ExprKind::Scope { region_scope, lint_level, value } = expr.kind {
-            let source_info = this.source_info(expr.span);
+            let source_info = this.source_info(SpanSource::Span(expr.span));
             let region_scope = (region_scope, source_info);
             return this.in_scope(region_scope, lint_level, |this| {
                 this.as_call_operand(block, scope, value)

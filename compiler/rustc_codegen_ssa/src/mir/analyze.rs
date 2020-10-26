@@ -26,7 +26,7 @@ pub fn non_ssa_locals<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>>(
     for (local, decl) in mir.local_decls.iter_enumerated() {
         let ty = fx.monomorphize(&decl.ty);
         debug!("local {:?} has type `{}`", local, ty);
-        let layout = fx.cx.spanned_layout_of(ty, decl.source_info.span);
+        let layout = fx.cx.spanned_layout_of(ty, decl.source_info.span_source.to_span(fx.cx.tcx()));
         if fx.cx.is_backend_immediate(layout) {
             // These sorts of types are immediates that we can store
             // in an Value without an alloca.
@@ -125,7 +125,10 @@ impl<Bx: BuilderMethods<'a, 'tcx>> LocalAnalyzer<'mir, 'a, 'tcx, Bx> {
 
                 // ZSTs don't require any actual memory access.
                 let elem_ty = base_ty.projection_ty(cx.tcx(), self.fx.monomorphize(&elem)).ty;
-                let span = self.fx.mir.local_decls[place_ref.local].source_info.span;
+                let span = self.fx.mir.local_decls[place_ref.local]
+                    .source_info
+                    .span_source
+                    .to_span(cx.tcx());
                 if cx.spanned_layout_of(elem_ty, span).is_zst() {
                     return;
                 }
@@ -222,8 +225,8 @@ impl<'mir, 'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> Visitor<'tcx>
 
         if let Some(index) = place.as_local() {
             self.assign(index, location);
-            let decl_span = self.fx.mir.local_decls[index].source_info.span;
-            if !self.fx.rvalue_creates_operand(rvalue, decl_span) {
+            let decl_span_source = self.fx.mir.local_decls[index].source_info.span_source;
+            if !self.fx.rvalue_creates_operand(rvalue, decl_span_source) {
                 self.not_ssa(index);
             }
         } else {

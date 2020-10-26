@@ -234,10 +234,10 @@ impl<'mir, 'tcx, Tag, Extra> Frame<'mir, 'tcx, Tag, Extra> {
         self.loc.ok().map(|loc| self.body.source_info(loc))
     }
 
-    pub fn current_span(&self) -> Span {
+    pub fn current_span(&self) -> SpanSource {
         match self.loc {
-            Ok(loc) => self.body.source_info(loc).span,
-            Err(span) => span,
+            Ok(loc) => self.body.source_info(loc).span_source,
+            Err(span) => SpanSource::Span(span), // FIXME
         }
     }
 }
@@ -373,7 +373,10 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
 
     #[inline(always)]
     pub fn cur_span(&self) -> Span {
-        self.stack().last().map(|f| f.current_span()).unwrap_or(self.tcx.span())
+        self.stack()
+            .last()
+            .map(|f| f.current_span().to_span(self.tcx.tcx))
+            .unwrap_or(self.tcx.span())
     }
 
     #[inline(always)]
@@ -932,7 +935,11 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
             });
             let span = frame.current_span();
 
-            frames.push(FrameInfo { span, instance: frame.instance, lint_root });
+            frames.push(FrameInfo {
+                span: span.to_span(self.tcx.tcx), // FIXME
+                instance: frame.instance,
+                lint_root,
+            });
         }
         trace!("generate stacktrace: {:#?}", frames);
         frames

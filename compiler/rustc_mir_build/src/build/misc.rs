@@ -7,7 +7,6 @@ use rustc_middle::ty::{self, Ty};
 
 use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
-use rustc_span::Span;
 
 impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// Adds a new temporary value of type `ty` storing the result of
@@ -15,10 +14,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     ///
     /// N.B., **No cleanup is scheduled for this temporary.** You should
     /// call `schedule_drop` once the temporary is initialized.
-    crate fn temp(&mut self, ty: Ty<'tcx>, span: Span) -> Place<'tcx> {
+    crate fn temp(&mut self, ty: Ty<'tcx>, span_source: SpanSource) -> Place<'tcx> {
         // Mark this local as internal to avoid temporaries with types not present in the
         // user's code resulting in ICEs from the generator transform.
-        let temp = self.local_decls.push(LocalDecl::new(ty, span).internal());
+        let temp = self.local_decls.push(LocalDecl::new(ty, span_source).internal());
         let place = Place::from(temp);
         debug!("temp: created temp {:?} with type {:?}", place, self.local_decls[temp].ty);
         place
@@ -28,19 +27,20 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// without any user type annotation.
     crate fn literal_operand(
         &mut self,
-        span: Span,
+        span_source: SpanSource,
         literal: &'tcx ty::Const<'tcx>,
     ) -> Operand<'tcx> {
-        let constant = box Constant { span, user_ty: None, literal };
+        let constant =
+            box Constant { span: span_source.to_span(self.hir.tcx()), user_ty: None, literal };
         Operand::Constant(constant)
     }
 
     // Returns a zero literal operand for the appropriate type, works for
     // bool, char and integers.
-    crate fn zero_literal(&mut self, span: Span, ty: Ty<'tcx>) -> Operand<'tcx> {
+    crate fn zero_literal(&mut self, span_source: SpanSource, ty: Ty<'tcx>) -> Operand<'tcx> {
         let literal = ty::Const::from_bits(self.hir.tcx(), 0, ty::ParamEnv::empty().and(ty));
 
-        self.literal_operand(span, literal)
+        self.literal_operand(span_source, literal)
     }
 
     crate fn push_usize(
@@ -50,13 +50,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         value: u64,
     ) -> Place<'tcx> {
         let usize_ty = self.hir.usize_ty();
-        let temp = self.temp(usize_ty, source_info.span);
+        let temp = self.temp(usize_ty, source_info.span_source);
         self.cfg.push_assign_constant(
             block,
             source_info,
             temp,
             Constant {
-                span: source_info.span,
+                span: source_info.span_source.to_span(self.hir.tcx()),
                 user_ty: None,
                 literal: self.hir.usize_literal(value),
             },

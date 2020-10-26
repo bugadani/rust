@@ -1,3 +1,4 @@
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::{PlaceContext, Visitor};
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, TyCtxt};
@@ -11,7 +12,7 @@ pub struct CheckPackedRef;
 impl<'tcx> MirPass<'tcx> for CheckPackedRef {
     fn run_pass(&self, tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
         let param_env = tcx.param_env(body.source.def_id());
-        let source_info = SourceInfo::outermost(body.span);
+        let source_info = SourceInfo::outermost(SpanSource::Span(body.span));
         let mut checker = PackedRefChecker { body, tcx, param_env, source_info };
         checker.visit_body(&body);
     }
@@ -49,7 +50,7 @@ impl<'a, 'tcx> Visitor<'tcx> for PackedRefChecker<'a, 'tcx> {
                 self.tcx.struct_span_lint_hir(
                     UNALIGNED_REFERENCES,
                     lint_root,
-                    source_info.span,
+                    source_info.span_source.to_span(self.tcx),
                     |lint| {
                         lint.build("reference to packed field is unaligned")
                             .note(

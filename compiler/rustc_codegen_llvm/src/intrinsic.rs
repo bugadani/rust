@@ -14,10 +14,11 @@ use rustc_codegen_ssa::mir::operand::OperandRef;
 use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::*;
 use rustc_hir as hir;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::layout::{FnAbiExt, HasTyCtxt};
 use rustc_middle::ty::{self, Ty};
 use rustc_middle::{bug, span_bug};
-use rustc_span::{sym, symbol::kw, Span, Symbol};
+use rustc_span::{sym, symbol::kw, Symbol};
 use rustc_target::abi::{self, HasDataLayout, LayoutOf, Primitive};
 use rustc_target::spec::PanicStrategy;
 
@@ -80,7 +81,7 @@ impl IntrinsicCallMethods<'tcx> for Builder<'a, 'll, 'tcx> {
         fn_abi: &FnAbi<'tcx, Ty<'tcx>>,
         args: &[OperandRef<'tcx, &'ll Value>],
         llresult: &'ll Value,
-        span: Span,
+        span_source: SpanSource,
     ) {
         let tcx = self.tcx;
         let callee_ty = instance.ty(tcx, ty::ParamEnv::reveal_all());
@@ -284,7 +285,7 @@ impl IntrinsicCallMethods<'tcx> for Builder<'a, 'll, 'tcx> {
                     None => {
                         span_invalid_monomorphization_error(
                             tcx.sess,
-                            span,
+                            span_source.to_span(tcx),
                             &format!(
                                 "invalid monomorphization of `{}` intrinsic: \
                                       expected basic integer type, found `{}`",
@@ -297,7 +298,15 @@ impl IntrinsicCallMethods<'tcx> for Builder<'a, 'll, 'tcx> {
             }
 
             _ if name_str.starts_with("simd_") => {
-                match generic_simd_intrinsic(self, name, callee_ty, args, ret_ty, llret_ty, span) {
+                match generic_simd_intrinsic(
+                    self,
+                    name,
+                    callee_ty,
+                    args,
+                    ret_ty,
+                    llret_ty,
+                    span_source,
+                ) {
                     Ok(llval) => llval,
                     Err(()) => return,
                 }
@@ -738,7 +747,7 @@ fn generic_simd_intrinsic(
     args: &[OperandRef<'tcx, &'ll Value>],
     ret_ty: Ty<'tcx>,
     llret_ty: &'ll Type,
-    span: Span,
+    span_source: SpanSource,
 ) -> Result<&'ll Value, ()> {
     // macros for error handling:
     macro_rules! emit_error {
@@ -747,7 +756,7 @@ fn generic_simd_intrinsic(
         };
         ($msg: tt, $($fmt: tt)*) => {
             span_invalid_monomorphization_error(
-                bx.sess(), span,
+                bx.sess(), span_source.to_span(bx.tcx()),
                 &format!(concat!("invalid monomorphization of `{}` intrinsic: ", $msg),
                          name, $($fmt)*));
         }
@@ -857,7 +866,10 @@ fn generic_simd_intrinsic(
 
     if name_str.starts_with("simd_shuffle") {
         let n: u64 = name_str["simd_shuffle".len()..].parse().unwrap_or_else(|_| {
-            span_bug!(span, "bad `simd_shuffle` instruction only caught in codegen?")
+            span_bug!(
+                span_source.to_span(bx.tcx()),
+                "bad `simd_shuffle` instruction only caught in codegen?"
+            )
         });
 
         require_simd!(ret_ty, "return");
@@ -1013,7 +1025,7 @@ fn generic_simd_intrinsic(
         in_ty: &::rustc_middle::ty::TyS<'_>,
         in_len: u64,
         bx: &mut Builder<'a, 'll, 'tcx>,
-        span: Span,
+        span_source: SpanSource,
         args: &[OperandRef<'tcx, &'ll Value>],
     ) -> Result<&'ll Value, ()> {
         macro_rules! emit_error {
@@ -1022,7 +1034,7 @@ fn generic_simd_intrinsic(
             };
             ($msg: tt, $($fmt: tt)*) => {
                 span_invalid_monomorphization_error(
-                    bx.sess(), span,
+                    bx.sess(), span_source.to_span(bx.tcx()),
                     &format!(concat!("invalid monomorphization of `{}` intrinsic: ", $msg),
                              name, $($fmt)*));
             }
@@ -1080,46 +1092,158 @@ fn generic_simd_intrinsic(
 
     match name {
         sym::simd_fsqrt => {
-            return simd_simple_float_intrinsic("sqrt", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "sqrt",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_fsin => {
-            return simd_simple_float_intrinsic("sin", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "sin",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_fcos => {
-            return simd_simple_float_intrinsic("cos", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "cos",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_fabs => {
-            return simd_simple_float_intrinsic("fabs", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "fabs",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_floor => {
-            return simd_simple_float_intrinsic("floor", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "floor",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_ceil => {
-            return simd_simple_float_intrinsic("ceil", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "ceil",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_fexp => {
-            return simd_simple_float_intrinsic("exp", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "exp",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_fexp2 => {
-            return simd_simple_float_intrinsic("exp2", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "exp2",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_flog10 => {
-            return simd_simple_float_intrinsic("log10", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "log10",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_flog2 => {
-            return simd_simple_float_intrinsic("log2", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "log2",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_flog => {
-            return simd_simple_float_intrinsic("log", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "log",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_fpowi => {
-            return simd_simple_float_intrinsic("powi", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "powi",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_fpow => {
-            return simd_simple_float_intrinsic("pow", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "pow",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         sym::simd_fma => {
-            return simd_simple_float_intrinsic("fma", in_elem, in_ty, in_len, bx, span, args);
+            return simd_simple_float_intrinsic(
+                "fma",
+                in_elem,
+                in_ty,
+                in_len,
+                bx,
+                span_source,
+                args,
+            );
         }
         _ => { /* fallthrough */ }
     }
@@ -1713,7 +1837,7 @@ unsupported {} from `{}` with element `{}` of size `{}` to `{}`"#,
         return Ok(v);
     }
 
-    span_bug!(span, "unknown SIMD intrinsic");
+    span_bug!(span_source.to_span(bx.tcx), "unknown SIMD intrinsic");
 }
 
 // Returns the width of an int Ty, and if it's signed or not

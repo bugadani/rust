@@ -449,7 +449,7 @@ impl Inliner<'tcx> {
                     // FIXME(eddyb) this doesn't seem right at all.
                     // The inlined source scopes should probably be annotated as
                     // such, but also contain all of the original information.
-                    scope.span = callsite.location.span;
+                    scope.span = callsite.location.span_source.to_span(self.tcx); // FIXME
 
                     let idx = caller_body.source_scopes.push(scope);
                     scope_map.push(idx);
@@ -459,7 +459,7 @@ impl Inliner<'tcx> {
                     let mut local = callee_body.local_decls[loc].clone();
 
                     local.source_info.scope = scope_map[local.source_info.scope];
-                    local.source_info.span = callsite.location.span;
+                    local.source_info.span_source = callsite.location.span_source;
 
                     let idx = caller_body.local_decls.push(local);
                     local_map.push(idx);
@@ -491,7 +491,7 @@ impl Inliner<'tcx> {
 
                     let ty = dest.ty(caller_body, self.tcx);
 
-                    let temp = LocalDecl::new(ty, callsite.location.span);
+                    let temp = LocalDecl::new(ty, callsite.location.span_source);
 
                     let tmp = caller_body.local_decls.push(temp);
                     let tmp = Place::from(tmp);
@@ -654,7 +654,7 @@ impl Inliner<'tcx> {
 
         let ty = arg.ty(caller_body, self.tcx);
 
-        let arg_tmp = LocalDecl::new(ty, callsite.location.span);
+        let arg_tmp = LocalDecl::new(ty, callsite.location.span_source);
         let arg_tmp = caller_body.local_decls.push(arg_tmp);
 
         caller_body[callsite.bb].statements.push(Statement {

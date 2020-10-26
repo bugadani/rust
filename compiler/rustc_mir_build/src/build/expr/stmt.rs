@@ -1,6 +1,7 @@
 use crate::build::scope::BreakableTarget;
 use crate::build::{BlockAnd, BlockAndExtension, BlockFrame, Builder};
 use crate::thir::*;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::region;
 use rustc_middle::mir::*;
 
@@ -18,7 +19,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     ) -> BlockAnd<()> {
         let this = self;
         let expr_span = expr.span;
-        let source_info = this.source_info(expr.span);
+        let source_info = this.source_info(SpanSource::Span(expr.span));
         // Handle a number of expressions that don't need a destination at all. This
         // avoids needing a mountain of temporary `()` variables.
         let expr2 = expr.clone();
@@ -46,7 +47,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 if this.hir.needs_drop(lhs.ty) {
                     let rhs = unpack!(block = this.as_local_operand(block, rhs));
                     let lhs = unpack!(block = this.as_place(block, lhs));
-                    unpack!(block = this.build_drop_and_replace(block, lhs_span, lhs, rhs));
+                    unpack!(
+                        block = this.build_drop_and_replace(
+                            block,
+                            SpanSource::Span(lhs_span),
+                            lhs,
+                            rhs
+                        )
+                    );
                 } else {
                     let rhs = unpack!(block = this.as_local_rvalue(block, rhs));
                     let lhs = unpack!(block = this.as_place(block, lhs));
@@ -79,8 +87,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 // because AssignOp is only legal for Copy types
                 // (overloaded ops should be desugared into a call).
                 let result = unpack!(
-                    block =
-                        this.build_binary_op(block, op, expr_span, lhs_ty, Operand::Copy(lhs), rhs)
+                    block = this.build_binary_op(
+                        block,
+                        op,
+                        SpanSource::Span(expr_span),
+                        lhs_ty,
+                        Operand::Copy(lhs),
+                        rhs
+                    )
                 );
                 this.cfg.push_assign(block, source_info, lhs, result);
 
@@ -164,7 +178,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     unpack!(block = this.as_temp(block, statement_scope, expr, Mutability::Not));
 
                 if let Some(span) = adjusted_span {
-                    this.local_decls[temp].source_info.span = span;
+                    this.local_decls[temp].source_info.span_source = SpanSource::Span(span);
                     this.block_context.pop();
                 }
 

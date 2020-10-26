@@ -76,7 +76,9 @@ fn mir_build(tcx: TyCtxt<'_>, def: ty::WithOptConstParam<LocalDefId>) -> Body<'_
             kind: hir::TraitItemKind::Const(ty, Some(body_id)),
             ..
         }) => (*body_id, ty.span, None),
-        Node::AnonConst(hir::AnonConst { body, hir_id, .. }) => (*body, tcx.hir().span(*hir_id), None),
+        Node::AnonConst(hir::AnonConst { body, hir_id, .. }) => {
+            (*body, tcx.hir().span(*hir_id), None)
+        }
 
         _ => span_bug!(tcx.hir().span(id), "can't build MIR for {:?}", def.did),
     };
@@ -185,7 +187,7 @@ fn mir_build(tcx: TyCtxt<'_>, def: ty::WithOptConstParam<LocalDefId>) -> Body<'_
                 return_ty,
                 return_ty_span,
                 body,
-                span_with_body
+                span_with_body,
             );
             mir.yield_ty = yield_ty;
             mir
@@ -583,7 +585,7 @@ fn construct_fn<'a, 'tcx, A>(
     return_ty: Ty<'tcx>,
     return_ty_span: Span,
     body: &'tcx hir::Body<'tcx>,
-    span_with_body: Span
+    span_with_body: Span,
 ) -> Body<'tcx>
 where
     A: Iterator<Item = ArgInfo<'tcx>>,
@@ -611,12 +613,12 @@ where
         region::Scope { id: body.value.hir_id.local_id, data: region::ScopeData::CallSite };
     let arg_scope =
         region::Scope { id: body.value.hir_id.local_id, data: region::ScopeData::Arguments };
-    let source_info = builder.source_info(span);
+    let source_info = builder.source_info(SpanSource::Span(span));
     let call_site_s = (call_site_scope, source_info);
     unpack!(builder.in_scope(call_site_s, LintLevel::Inherited, |builder| {
         let arg_scope_s = (arg_scope, source_info);
         // Attribute epilogue to function's closing brace
-        let fn_end = span_with_body.shrink_to_hi();
+        let fn_end = SpanSource::Span(span_with_body.shrink_to_hi());
         let return_block =
             unpack!(builder.in_breakable_scope(None, Place::return_place(), fn_end, |builder| {
                 Some(builder.in_scope(arg_scope_s, LintLevel::Inherited, |builder| {
@@ -659,14 +661,15 @@ fn construct_const<'a, 'tcx>(
     let owner_id = tcx.hir().body_owner(body_id);
     let def_id = tcx.hir().local_def_id(owner_id);
     let span = tcx.hir().span(owner_id);
-    let mut builder = Builder::new(hir, def_id.to_def_id(), span, 0, Safety::Safe, const_ty, const_ty_span, None);
+    let mut builder =
+        Builder::new(hir, def_id.to_def_id(), span, 0, Safety::Safe, const_ty, const_ty_span, None);
 
     let mut block = START_BLOCK;
     let ast_expr = &tcx.hir().body(body_id).value;
     let expr = builder.hir.mirror(ast_expr);
     unpack!(block = builder.into_expr(Place::return_place(), block, expr));
 
-    let source_info = builder.source_info(span);
+    let source_info = builder.source_info(SpanSource::Span(span));
     builder.cfg.terminate(block, source_info, TerminatorKind::Return);
 
     builder.build_drop_trees(false);
@@ -699,8 +702,9 @@ fn construct_error<'a, 'tcx>(hir: Cx<'a, 'tcx>, body_id: hir::BodyId) -> Body<'t
         hir::BodyOwnerKind::Const => 0,
         hir::BodyOwnerKind::Static(_) => 0,
     };
-    let mut builder = Builder::new(hir, def_id.to_def_id(), span, num_params, Safety::Safe, ty, span, None);
-    let source_info = builder.source_info(span);
+    let mut builder =
+        Builder::new(hir, def_id.to_def_id(), span, num_params, Safety::Safe, ty, span, None);
+    let source_info = builder.source_info(SpanSource::Span(span));
     // Some MIR passes will expect the number of parameters to match the
     // function declaration.
     for _ in 0..num_params {
@@ -740,7 +744,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             guard_context: vec![],
             push_unsafe_count: 0,
             unpushed_unsafe: safety,
-            local_decls: IndexVec::from_elem_n(LocalDecl::new(return_ty, return_span), 1),
+            local_decls: IndexVec::from_elem_n(
+                LocalDecl::new(return_ty, SpanSource::Span(return_span)),
+                1,
+            ),
             canonical_user_type_annotations: IndexVec::new(),
             upvar_mutbls: vec![],
             var_indices: Default::default(),
@@ -750,7 +757,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
         assert_eq!(builder.cfg.start_new_block(), START_BLOCK);
         assert_eq!(
-            builder.new_source_scope(span, lint_level, Some(safety)),
+            builder.new_source_scope(SpanSource::Span(span), lint_level, Some(safety)),
             OUTERMOST_SOURCE_SCOPE
         );
         builder.source_scopes[OUTERMOST_SOURCE_SCOPE].parent_scope = None;
@@ -788,8 +795,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     ) -> BlockAnd<()> {
         // Allocate locals for the function arguments
         for &ArgInfo(ty, _, arg_opt, _) in arguments.iter() {
-            let source_info =
-                SourceInfo::outermost(arg_opt.map_or(self.fn_span, |arg| arg.pat.span));
+            let source_info = SourceInfo::outermost(
+                arg_opt
+                    .map_or(SpanSource::Span(self.fn_span), |arg| SpanSource::Span(arg.pat.span)),
+            );
             let arg_local = self.local_decls.push(LocalDecl::with_source_info(ty, source_info));
 
             // If this is a simple binding pattern, give debuginfo a nice name.
@@ -861,7 +870,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
                     self.var_debug_info.push(VarDebugInfo {
                         name,
-                        source_info: SourceInfo::outermost(tcx_hir.span(var_id)),
+                        source_info: SourceInfo::outermost(SpanSource::Span(tcx_hir.span(var_id))), //FIXME
                         place: Place {
                             local: closure_env_arg,
                             projection: tcx.intern_place_elems(&projs),
@@ -883,7 +892,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
             // Make sure we drop (parts of) the argument even when not matched on.
             self.schedule_drop(
-                arg_opt.as_ref().map_or(ast_body.span, |arg| arg.pat.span),
+                arg_opt
+                    .as_ref()
+                    .map_or(SpanSource::Span(ast_body.span), |arg| SpanSource::Span(arg.pat.span)),
                 argument_scope,
                 local,
                 DropKind::Value,
@@ -893,7 +904,11 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let pattern = self.hir.pattern_from_hir(&arg.pat);
                 let original_source_scope = self.source_scope;
                 let span = pattern.span;
-                self.set_correct_source_scope_for_arg(arg.hir_id, original_source_scope, span);
+                self.set_correct_source_scope_for_arg(
+                    arg.hir_id,
+                    original_source_scope,
+                    SpanSource::Span(span),
+                );
                 match *pattern.kind {
                     // Don't introduce extra copies for simple bindings
                     PatKind::Binding {
@@ -925,10 +940,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     _ => {
                         scope = self.declare_bindings(
                             scope,
-                            ast_body.span,
+                            SpanSource::Span(ast_body.span),
                             &pattern,
                             matches::ArmHasGuard(false),
-                            Some((Some(&place), span)),
+                            Some((Some(&place), SpanSource::Span(span))),
                         );
                         unpack!(block = self.place_into_pattern(block, pattern, place, false));
                     }
@@ -950,7 +965,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         &mut self,
         arg_hir_id: hir::HirId,
         original_source_scope: SourceScope,
-        pattern_span: Span,
+        pattern_span: SpanSource,
     ) {
         let tcx = self.hir.tcx();
         let current_root = tcx.maybe_lint_level_root_bounded(arg_hir_id, self.hir.root_lint_level);
@@ -974,7 +989,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             None => {
                 let ty = self.hir.unit_ty();
                 let fn_span = self.fn_span;
-                let tmp = self.temp(ty, fn_span);
+                let tmp = self.temp(ty, SpanSource::Span(fn_span));
                 self.unit_temp = Some(tmp);
                 tmp
             }

@@ -188,7 +188,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                             .tcx
                             .sess
                             .struct_span_err(
-                                type_test_span,
+                                type_test_span.to_span(self.infcx.tcx),
                                 &format!("`{}` does not live long enough", type_test.generic_kind),
                             )
                             .buffer(&mut self.errors_buffer);
@@ -226,7 +226,10 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                     self.infcx
                         .tcx
                         .sess
-                        .struct_span_err(span, "higher-ranked subtype error")
+                        .struct_span_err(
+                            span.to_span(self.infcx.tcx),
+                            "higher-ranked subtype error",
+                        )
                         .buffer(&mut self.errors_buffer);
                 }
 
@@ -283,7 +286,8 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
         debug!("report_region_error: category={:?} {:?}", category, span);
         // Check if we can use one of the "nice region errors".
         if let (Some(f), Some(o)) = (self.to_error_region(fr), self.to_error_region(outlived_fr)) {
-            let nice = NiceRegionError::new_from_span(self.infcx, span, o, f);
+            let nice =
+                NiceRegionError::new_from_span(self.infcx, span.to_span(self.infcx.tcx), o, f);
             if let Some(diag) = nice.try_report_from_nll() {
                 diag.buffer(&mut self.errors_buffer);
                 return;
@@ -306,7 +310,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
             fr_is_local,
             outlived_fr_is_local,
             category,
-            span,
+            span: span.to_span(self.infcx.tcx), //FIXME
         };
 
         let diag = match (category, fr_is_local, outlived_fr_is_local) {

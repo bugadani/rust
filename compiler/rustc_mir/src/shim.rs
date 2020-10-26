@@ -123,10 +123,10 @@ enum CallKind<'tcx> {
 
 fn local_decls_for_sig<'tcx>(
     sig: &ty::FnSig<'tcx>,
-    span: Span,
+    span_source: SpanSource,
 ) -> IndexVec<Local, LocalDecl<'tcx>> {
-    iter::once(LocalDecl::new(sig.output(), span))
-        .chain(sig.inputs().iter().map(|ity| LocalDecl::new(ity, span).immutable()))
+    iter::once(LocalDecl::new(sig.output(), span_source))
+        .chain(sig.inputs().iter().map(|ity| LocalDecl::new(ity, span_source).immutable()))
         .collect()
 }
 
@@ -146,9 +146,8 @@ fn build_drop_shim<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId, ty: Option<Ty<'tcx>>)
     };
     let sig = tcx.fn_sig(def_id).subst(tcx, substs);
     let sig = tcx.erase_late_bound_regions(&sig);
-    let span = tcx.def_span(def_id);
 
-    let source_info = SourceInfo::outermost(span);
+    let source_info = SourceInfo::outermost(SpanSource::DefId(def_id));
 
     let return_block = BasicBlock::new(1);
     let mut blocks = IndexVec::with_capacity(2);
@@ -163,8 +162,13 @@ fn build_drop_shim<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId, ty: Option<Ty<'tcx>>)
     block(&mut blocks, TerminatorKind::Return);
 
     let source = MirSource::from_instance(ty::InstanceDef::DropGlue(def_id, ty));
-    let mut body =
-        new_body(source, blocks, local_decls_for_sig(&sig, span), sig.inputs().len(), span);
+    let mut body = new_body(
+        source,
+        blocks,
+        local_decls_for_sig(&sig, SpanSource::DefId(def_id)),
+        sig.inputs().len(),
+        tcx.def_span(def_id), // FIXME
+    );
 
     if let Some(..) = ty {
         // The first argument (index 0), but add 1 for the return value.
@@ -335,14 +339,13 @@ impl CloneShimBuilder<'tcx> {
         let substs = tcx.mk_substs_trait(self_ty, &[]);
         let sig = tcx.fn_sig(def_id).subst(tcx, substs);
         let sig = tcx.erase_late_bound_regions(&sig);
-        let span = tcx.def_span(def_id);
 
         CloneShimBuilder {
             tcx,
             def_id,
-            local_decls: local_decls_for_sig(&sig, span),
+            local_decls: local_decls_for_sig(&sig, SpanSource::DefId(def_id)),
             blocks: IndexVec::new(),
-            span,
+            span: tcx.def_span(def_id), // FIXME
             sig,
         }
     }
@@ -356,7 +359,7 @@ impl CloneShimBuilder<'tcx> {
     }
 
     fn source_info(&self) -> SourceInfo {
-        SourceInfo::outermost(self.span)
+        SourceInfo::outermost(SpanSource::Span(self.span))
     }
 
     fn block(
@@ -396,7 +399,7 @@ impl CloneShimBuilder<'tcx> {
 
     fn make_place(&mut self, mutability: Mutability, ty: Ty<'tcx>) -> Place<'tcx> {
         let span = self.span;
-        let mut local = LocalDecl::new(ty, span);
+        let mut local = LocalDecl::new(ty, SpanSource::Span(span));
         if mutability == Mutability::Not {
             local = local.immutable();
         }
@@ -485,7 +488,7 @@ impl CloneShimBuilder<'tcx> {
         let tcx = self.tcx;
         let span = self.span;
 
-        let beg = self.local_decls.push(LocalDecl::new(tcx.types.usize, span));
+        let beg = self.local_decls.push(LocalDecl::new(tcx.types.usize, SpanSource::Span(span)));
         let end = self.make_place(Mutability::Not, tcx.types.usize);
 
         // BB #0
@@ -540,7 +543,7 @@ impl CloneShimBuilder<'tcx> {
         // `let mut beg = 0;`
         // goto #6;
         let end = beg;
-        let beg = self.local_decls.push(LocalDecl::new(tcx.types.usize, span));
+        let beg = self.local_decls.push(LocalDecl::new(tcx.types.usize, SpanSource::Span(span)));
         let init = self.make_statement(StatementKind::Assign(box (
             Place::from(beg),
             Rvalue::Use(Operand::Constant(self.make_usize(0))),
@@ -708,12 +711,10 @@ fn build_call_shim<'tcx>(
         sig.inputs_and_output = tcx.intern_type_list(&inputs_and_output);
     }
 
-    let span = tcx.def_span(def_id);
-
     debug!("build_call_shim: sig={:?}", sig);
 
-    let mut local_decls = local_decls_for_sig(&sig, span);
-    let source_info = SourceInfo::outermost(span);
+    let mut local_decls = local_decls_for_sig(&sig, SpanSource::DefId(def_id));
+    let source_info = SourceInfo::outermost(SpanSource::DefId(def_id));
 
     let rcvr_place = || {
         assert!(rcvr_adjustment.is_some());
@@ -732,7 +733,7 @@ fn build_call_shim<'tcx>(
                         tcx.lifetimes.re_erased,
                         ty::TypeAndMut { ty: sig.inputs()[0], mutbl: hir::Mutability::Mut },
                     ),
-                    span,
+                    SpanSource::DefId(def_id),
                 )
                 .immutable(),
             );
@@ -757,7 +758,7 @@ fn build_call_shim<'tcx>(
             let ty = tcx.type_of(def_id);
             (
                 Operand::Constant(box Constant {
-                    span,
+                    span: source_info.span_source.to_span(tcx), //FIXME
                     user_ty: None,
                     literal: ty::Const::zero_sized(tcx, ty),
                 }),
@@ -813,7 +814,7 @@ fn build_call_shim<'tcx>(
                 None
             },
             from_hir_call: true,
-            fn_span: span,
+            fn_span: source_info.span_source.to_span(tcx),
         },
         false,
     );
@@ -842,8 +843,13 @@ fn build_call_shim<'tcx>(
         block(&mut blocks, vec![], TerminatorKind::Resume, true);
     }
 
-    let mut body =
-        new_body(MirSource::from_instance(instance), blocks, local_decls, sig.inputs().len(), span);
+    let mut body = new_body(
+        MirSource::from_instance(instance),
+        blocks,
+        local_decls,
+        sig.inputs().len(),
+        source_info.span_source.to_span(tcx),
+    );
 
     if let Abi::RustCall = sig.abi {
         body.spread_arg = Some(Local::new(sig.inputs().len()));
@@ -871,9 +877,9 @@ pub fn build_adt_ctor(tcx: TyCtxt<'_>, ctor_id: DefId) -> Body<'_> {
 
     debug!("build_ctor: ctor_id={:?} sig={:?}", ctor_id, sig);
 
-    let local_decls = local_decls_for_sig(&sig, span);
+    let local_decls = local_decls_for_sig(&sig, SpanSource::Span(span));
 
-    let source_info = SourceInfo::outermost(span);
+    let source_info = SourceInfo::outermost(SpanSource::Span(span));
 
     let variant_index = if adt_def.is_enum() {
         adt_def.variant_index_with_ctor_id(ctor_id)

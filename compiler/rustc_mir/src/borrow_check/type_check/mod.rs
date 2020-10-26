@@ -946,10 +946,10 @@ impl Locations {
     }
 
     /// Gets a span representing the location.
-    pub fn span(&self, body: &Body<'_>) -> Span {
+    pub fn span(&self, body: &Body<'_>) -> SpanSource {
         match self {
-            Locations::All(span) => *span,
-            Locations::Single(l) => body.source_info(*l).span,
+            Locations::All(span) => SpanSource::Span(*span),
+            Locations::Single(l) => body.source_info(*l).span_source,
         }
     }
 }
@@ -1249,7 +1249,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                             dummy_body_id,
                             param_env,
                             &anon_ty,
-                            SpanSource::Span(locations.span(body)),
+                            locations.span(body),
                         ));
                     debug!(
                         "eq_opaque_type_and_type: \
@@ -1482,7 +1482,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     ty::Adt(adt, _) if adt.is_enum() => adt,
                     _ => {
                         span_bug!(
-                            stmt.source_info.span,
+                            stmt.source_info.span_source.to_span(tcx),
                             "bad set discriminant ({:?} = {:?}): lhs is not an enum",
                             place,
                             variant_index
@@ -1491,7 +1491,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                 };
                 if variant_index.as_usize() >= adt.variants.len() {
                     span_bug!(
-                        stmt.source_info.span,
+                        stmt.source_info.span_source.to_span(tcx),
                         "bad set discriminant ({:?} = {:?}): value of of range",
                         place,
                         variant_index
@@ -1504,7 +1504,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     place_ty,
                     variance,
                     projection,
-                    Locations::All(stmt.source_info.span),
+                    Locations::All(stmt.source_info.span_source.to_span(tcx)),
                     ConstraintCategory::TypeAnnotation,
                 ) {
                     let annotation = &self.user_type_annotations[projection.base];
@@ -1602,7 +1602,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     }
                 };
                 let (sig, map) = self.infcx.replace_bound_vars_with_fresh_vars(
-                    SpanSource::Span(term.source_info.span),
+                    term.source_info.span_source,
                     LateBoundRegionConversionTime::FnCall,
                     &sig,
                 );
@@ -1728,8 +1728,8 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                 // When `#![feature(unsized_locals)]` is not enabled,
                 // this check is done at `check_local`.
                 if self.tcx().features().unsized_locals {
-                    let span = term.source_info.span;
-                    self.ensure_place_sized(dest_ty, span);
+                    let span_source = term.source_info.span_source;
+                    self.ensure_place_sized(dest_ty, span_source);
                 }
             }
             None => {
@@ -1779,7 +1779,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
 
     fn check_iscleanup(&mut self, body: &Body<'tcx>, block_data: &BasicBlockData<'tcx>) {
         let is_cleanup = block_data.is_cleanup;
-        self.last_span_source = SpanSource::Span(block_data.terminator().source_info.span);
+        self.last_span_source = block_data.terminator().source_info.span_source;
         match block_data.terminator().kind {
             TerminatorKind::Goto { target } => {
                 self.assert_iscleanup(body, block_data, target, is_cleanup)
@@ -1891,20 +1891,21 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
         // When `#![feature(unsized_locals)]` is enabled, only function calls
         // and nullary ops are checked in `check_call_dest`.
         if !self.tcx().features().unsized_locals {
-            let span = local_decl.source_info.span;
+            let span_source = local_decl.source_info.span_source;
             let ty = local_decl.ty;
-            self.ensure_place_sized(ty, span);
+            self.ensure_place_sized(ty, span_source);
         }
     }
 
-    fn ensure_place_sized(&mut self, ty: Ty<'tcx>, span: Span) {
+    fn ensure_place_sized(&mut self, ty: Ty<'tcx>, span_source: SpanSource) {
         let tcx = self.tcx();
 
         // Erase the regions from `ty` to get a global type.  The
         // `Sized` bound in no way depends on precise regions, so this
         // shouldn't affect `is_sized`.
         let erased_ty = tcx.erase_regions(&ty);
-        if !erased_ty.is_sized(tcx.at(SpanSource::Span(span)), self.param_env) {
+        if !erased_ty.is_sized(tcx.at(span_source), self.param_env) {
+            let span = span_source.to_span(tcx);
             // in current MIR construction, all non-control-flow rvalue
             // expressions evaluate through `as_temp` or `into` a return
             // slot or local, so to find all unsized rvalues it is enough
@@ -1990,13 +1991,10 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                     if let Operand::Move(_) = operand {
                         // While this is located in `nll::typeck` this error is not an NLL error, it's
                         // a required check to make sure that repeated elements implement `Copy`.
-                        let span = body.source_info(location).span;
+                        let span_source = body.source_info(location).span_source;
                         let ty = operand.ty(body, tcx);
-                        if !self.infcx.type_is_copy_modulo_regions(
-                            self.param_env,
-                            ty,
-                            SpanSource::Span(span),
-                        ) {
+                        if !self.infcx.type_is_copy_modulo_regions(self.param_env, ty, span_source)
+                        {
                             let ccx = ConstCx::new_with_param_env(tcx, body, self.param_env);
                             // To determine if `const_in_array_repeat_expressions` feature gate should
                             // be mentioned, need to check if the rvalue is promotable.
@@ -2010,7 +2008,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                             self.infcx.report_selection_error(
                                 &traits::Obligation::new(
                                     ObligationCause::new(
-                                        SpanSource::Span(span),
+                                        span_source,
                                         self.tcx().hir().local_def_id_to_hir_id(def_id),
                                         traits::ObligationCauseCode::RepeatVec(should_suggest),
                                     ),
@@ -2037,8 +2035,8 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
             Rvalue::NullaryOp(_, ty) => {
                 // Even with unsized locals cannot box an unsized value.
                 if self.tcx().features().unsized_locals {
-                    let span = body.source_info(location).span;
-                    self.ensure_place_sized(ty, span);
+                    let span_source = body.source_info(location).span_source;
+                    self.ensure_place_sized(ty, span_source);
                 }
 
                 let trait_ref = ty::TraitRef {
@@ -2301,7 +2299,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                         let ty_right = right.ty(body, tcx);
                         let common_ty = self.infcx.next_ty_var(TypeVariableOrigin {
                             kind: TypeVariableOriginKind::MiscVariable,
-                            span_source: SpanSource::Span(body.source_info(location).span),
+                            span_source: body.source_info(location).span_source,
                         });
                         self.relate_types(
                             common_ty,
@@ -2759,8 +2757,8 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
         for (block, block_data) in body.basic_blocks().iter_enumerated() {
             let mut location = Location { block, statement_index: 0 };
             for stmt in &block_data.statements {
-                if !stmt.source_info.span.is_dummy() {
-                    self.last_span_source = SpanSource::Span(stmt.source_info.span);
+                if !stmt.source_info.span_source.to_span(self.tcx()).is_dummy() {
+                    self.last_span_source = stmt.source_info.span_source;
                 }
                 self.check_stmt(body, stmt, location);
                 location.statement_index += 1;

@@ -53,7 +53,7 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
             const_context,
             min_const_fn,
             violations: vec![],
-            source_info: SourceInfo::outermost(body.span),
+            source_info: SourceInfo::outermost(SpanSource::Span(body.span)),
             tcx,
             param_env,
             used_unsafe: Default::default(),
@@ -245,13 +245,13 @@ impl<'a, 'tcx> Visitor<'tcx> for UnsafetyChecker<'a, 'tcx> {
                             let elem_ty = match elem {
                                 ProjectionElem::Field(_, ty) => ty,
                                 _ => span_bug!(
-                                    self.source_info.span,
+                                    self.source_info.span_source.to_span(self.tcx),
                                     "non-field projection {:?} from union?",
                                     place
                                 ),
                             };
                             if !elem_ty.is_copy_modulo_regions(
-                                self.tcx.at(SpanSource::Span(self.source_info.span)),
+                                self.tcx.at(self.source_info.span_source),
                                 self.param_env,
                             ) {
                                 self.require_unsafe(
@@ -408,7 +408,7 @@ impl<'a, 'tcx> UnsafetyChecker<'a, 'tcx> {
                             // Check `is_freeze` as late as possible to avoid cycle errors
                             // with opaque types.
                             } else if !place.ty(self.body, self.tcx).ty.is_freeze(
-                                self.tcx.at(SpanSource::Span(self.source_info.span)),
+                                self.tcx.at(self.source_info.span_source),
                                 self.param_env,
                             ) {
                                 UnsafetyViolationDetails::BorrowOfLayoutConstrainedField
@@ -637,13 +637,13 @@ pub fn check_unsafety(tcx: TyCtxt<'_>, def_id: LocalDefId) {
                 // once
                 struct_span_err!(
                     tcx.sess,
-                    source_info.span,
+                    source_info.span_source.to_span(tcx),
                     E0133,
                     "{} is unsafe and requires unsafe{} block",
                     description,
                     unsafe_fn_msg,
                 )
-                .span_label(source_info.span, description)
+                .span_label(source_info.span_source.to_span(tcx), description)
                 .note(note)
                 .emit();
             }
@@ -656,7 +656,7 @@ pub fn check_unsafety(tcx: TyCtxt<'_>, def_id: LocalDefId) {
                     tcx.struct_span_lint_hir(
                         SAFE_PACKED_BORROWS,
                         lint_root,
-                        source_info.span,
+                        source_info.span_source.to_span(tcx),
                         |lint| {
                             lint.build(&format!(
                                 "{} is unsafe and requires unsafe{} block (error E0133)",
@@ -671,13 +671,13 @@ pub fn check_unsafety(tcx: TyCtxt<'_>, def_id: LocalDefId) {
             UnsafetyViolationKind::UnsafeFn => tcx.struct_span_lint_hir(
                 UNSAFE_OP_IN_UNSAFE_FN,
                 lint_root,
-                source_info.span,
+                source_info.span_source.to_span(tcx),
                 |lint| {
                     lint.build(&format!(
                         "{} is unsafe and requires unsafe block (error E0133)",
                         description,
                     ))
-                    .span_label(source_info.span, description)
+                    .span_label(source_info.span_source.to_span(tcx), description)
                     .note(note)
                     .emit();
                 },
@@ -701,15 +701,20 @@ pub fn check_unsafety(tcx: TyCtxt<'_>, def_id: LocalDefId) {
                 } else {
                     UNSAFE_OP_IN_UNSAFE_FN
                 };
-                tcx.struct_span_lint_hir(&lint, lint_root, source_info.span, |lint| {
-                    lint.build(&format!(
-                        "{} is unsafe and requires unsafe block (error E0133)",
-                        description,
-                    ))
-                    .span_label(source_info.span, description)
-                    .note(note)
-                    .emit();
-                })
+                tcx.struct_span_lint_hir(
+                    &lint,
+                    lint_root,
+                    source_info.span_source.to_span(tcx),
+                    |lint| {
+                        lint.build(&format!(
+                            "{} is unsafe and requires unsafe block (error E0133)",
+                            description,
+                        ))
+                        .span_label(source_info.span_source.to_span(tcx), description)
+                        .note(note)
+                        .emit();
+                    },
+                )
             }
         }
     }

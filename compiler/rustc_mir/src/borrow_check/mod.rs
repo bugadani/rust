@@ -9,6 +9,7 @@ use rustc_hir::{HirId, Node};
 use rustc_index::bit_set::BitSet;
 use rustc_index::vec::IndexVec;
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::{
     traversal, Body, ClearCrossCrate, Local, Location, Mutability, Operand, Place, PlaceElem,
     PlaceRef,
@@ -137,7 +138,7 @@ fn do_mir_borrowck<'a, 'tcx>(
             if let Some(prev_name) = local_names[local] {
                 if var_debug_info.name != prev_name {
                     span_bug!(
-                        var_debug_info.source_info.span,
+                        var_debug_info.source_info.span_source.to_span(infcx.tcx),
                         "local {:?} has many names (`{}` vs `{}`)",
                         local,
                         prev_name,
@@ -424,7 +425,7 @@ fn do_mir_borrowck<'a, 'tcx>(
             None => continue,
         }
 
-        let span = local_decl.source_info.span;
+        let span = local_decl.source_info.span_source.to_span(infcx.tcx);
         if span.desugaring_kind().is_some() {
             // If the `mut` arises as part of a desugaring, we should ignore it.
             continue;
@@ -576,7 +577,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
         location: Location,
     ) {
         debug!("MirBorrowckCtxt::process_statement({:?}, {:?}): {:?}", location, stmt, flow_state);
-        let span = stmt.source_info.span;
+        let span = stmt.source_info.span_source.to_span(self.infcx.tcx);
 
         self.check_activations(location, span, flow_state);
 
@@ -666,7 +667,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
         loc: Location,
     ) {
         debug!("MirBorrowckCtxt::process_terminator({:?}, {:?}): {:?}", loc, term, flow_state);
-        let span = term.source_info.span;
+        let span = term.source_info.span_source.to_span(self.infcx.tcx);
 
         self.check_activations(loc, span, flow_state);
 
@@ -789,7 +790,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
         term: &'cx Terminator<'tcx>,
         loc: Location,
     ) {
-        let span = term.source_info.span;
+        let span_source = term.source_info.span_source;
 
         match term.kind {
             TerminatorKind::Yield { value: _, resume: _, resume_arg: _, drop: _ } => {
@@ -798,7 +799,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
                     let borrow_set = self.borrow_set.clone();
                     for i in flow_state.borrows.iter() {
                         let borrow = &borrow_set[i];
-                        self.check_for_local_borrow(borrow, span);
+                        self.check_for_local_borrow(borrow, span_source);
                     }
                 }
             }
@@ -811,7 +812,7 @@ impl<'cx, 'tcx> dataflow::ResultsVisitor<'cx, 'tcx> for MirBorrowckCtxt<'cx, 'tc
                 let borrow_set = self.borrow_set.clone();
                 for i in flow_state.borrows.iter() {
                     let borrow = &borrow_set[i];
-                    self.check_for_invalidation_at_exit(loc, borrow, span);
+                    self.check_for_invalidation_at_exit(loc, borrow, span_source);
                 }
             }
 
@@ -1493,7 +1494,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         &mut self,
         location: Location,
         borrow: &BorrowData<'tcx>,
-        span: Span,
+        span_source: SpanSource,
     ) {
         debug!("check_for_invalidation_at_exit({:?})", borrow);
         let place = borrow.borrowed_place;
@@ -1535,7 +1536,8 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             debug!("check_for_invalidation_at_exit({:?}): INVALID", place);
             // FIXME: should be talking about the region lifetime instead
             // of just a span here.
-            let span = self.infcx.tcx.sess.source_map().end_point(span);
+            let span =
+                self.infcx.tcx.sess.source_map().end_point(span_source.to_span(self.infcx.tcx));
             self.report_borrowed_value_does_not_live_long_enough(
                 location,
                 borrow,
@@ -1547,13 +1549,13 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
 
     /// Reports an error if this is a borrow of local data.
     /// This is called for all Yield expressions on movable generators
-    fn check_for_local_borrow(&mut self, borrow: &BorrowData<'tcx>, yield_span: Span) {
+    fn check_for_local_borrow(&mut self, borrow: &BorrowData<'tcx>, yield_span_source: SpanSource) {
         debug!("check_for_local_borrow({:?})", borrow);
 
         if borrow_of_local_data(borrow.borrowed_place) {
             let err = self.cannot_borrow_across_generator_yield(
                 self.retrieve_borrow_spans(borrow).var_or_use(),
-                yield_span,
+                yield_span_source.to_span(self.infcx.tcx),
             );
 
             err.buffer(&mut self.errors_buffer);

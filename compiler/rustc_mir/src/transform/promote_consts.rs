@@ -23,7 +23,6 @@ use rustc_middle::ty::cast::CastTy;
 use rustc_middle::ty::subst::InternalSubsts;
 use rustc_middle::ty::{self, List, TyCtxt, TypeFoldable};
 use rustc_span::symbol::sym;
-use rustc_span::Span;
 
 use rustc_index::vec::{Idx, IndexVec};
 use rustc_target::spec::abi::Abi;
@@ -449,7 +448,7 @@ impl<'tcx> Validator<'_, 'tcx> {
                     ),
                     _ => {
                         span_bug!(
-                            statement.source_info.span,
+                            statement.source_info.span_source.to_span(self.tcx),
                             "{:?} is not an assignment",
                             statement
                         );
@@ -463,12 +462,16 @@ impl<'tcx> Validator<'_, 'tcx> {
                         Q::in_any_value_of_ty(&self.ccx, return_ty)
                     }
                     kind => {
-                        span_bug!(terminator.source_info.span, "{:?} not promotable", kind);
+                        span_bug!(
+                            terminator.source_info.span_source.to_span(self.tcx),
+                            "{:?} not promotable",
+                            kind
+                        );
                     }
                 }
             }
         } else {
-            let span = self.body.local_decls[local].source_info.span;
+            let span = self.body.local_decls[local].source_info.span_source.to_span(self.tcx);
             span_bug!(span, "{:?} not promotable, qualif_local shouldn't have been called", local);
         }
     }
@@ -484,7 +487,7 @@ impl<'tcx> Validator<'_, 'tcx> {
                     StatementKind::Assign(box (_, rhs)) => self.validate_rvalue(rhs),
                     _ => {
                         span_bug!(
-                            statement.source_info.span,
+                            statement.source_info.span_source.to_span(self.tcx),
                             "{:?} is not an assignment",
                             statement
                         );
@@ -496,7 +499,11 @@ impl<'tcx> Validator<'_, 'tcx> {
                     TerminatorKind::Call { func, args, .. } => self.validate_call(func, args),
                     TerminatorKind::Yield { .. } => Err(Unpromotable),
                     kind => {
-                        span_bug!(terminator.source_info.span, "{:?} not promotable", kind);
+                        span_bug!(
+                            terminator.source_info.span_source.to_span(self.tcx),
+                            "{:?} not promotable",
+                            kind
+                        );
                     }
                 }
             }
@@ -817,7 +824,7 @@ pub fn validate_candidates(
                 Candidate::Argument { bb, index } | Candidate::InlineAsm { bb, index }
                     if !is_promotable =>
                 {
-                    let span = ccx.body[bb].terminator().source_info.span;
+                    let span = ccx.body[bb].terminator().source_info.span_source.to_span(ccx.tcx);
                     let msg = format!("argument {} is required to be a constant", index + 1);
                     ccx.tcx.sess.span_err(span, &msg);
                 }
@@ -847,18 +854,18 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
         self.promoted.basic_blocks_mut().push(BasicBlockData {
             statements: vec![],
             terminator: Some(Terminator {
-                source_info: SourceInfo::outermost(span),
+                source_info: SourceInfo::outermost(SpanSource::Span(span)),
                 kind: TerminatorKind::Return,
             }),
             is_cleanup: false,
         })
     }
 
-    fn assign(&mut self, dest: Local, rvalue: Rvalue<'tcx>, span: Span) {
+    fn assign(&mut self, dest: Local, rvalue: Rvalue<'tcx>, span_source: SpanSource) {
         let last = self.promoted.basic_blocks().last().unwrap();
         let data = &mut self.promoted[last];
         data.statements.push(Statement {
-            source_info: SourceInfo::outermost(span),
+            source_info: SourceInfo::outermost(span_source),
             kind: StatementKind::Assign(box (Place::from(dest), rvalue)),
         });
     }
@@ -889,7 +896,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
         let num_stmts = self.source[loc.block].statements.len();
         let new_temp = self.promoted.local_decls.push(LocalDecl::new(
             self.source.local_decls[temp].ty,
-            self.source.local_decls[temp].source_info.span,
+            self.source.local_decls[temp].source_info.span_source,
         ));
 
         debug!("promote({:?} @ {:?}/{:?}, {:?})", temp, loc, num_stmts, self.keep_original);
@@ -903,7 +910,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                     StatementKind::Assign(box (_, ref mut rhs)) => rhs,
                     _ => {
                         span_bug!(
-                            statement.source_info.span,
+                            statement.source_info.span_source.to_span(self.tcx),
                             "{:?} is not an assignment",
                             statement
                         );
@@ -915,7 +922,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                         rhs.clone()
                     } else {
                         let unit = Rvalue::Use(Operand::Constant(box Constant {
-                            span: statement.source_info.span,
+                            span: statement.source_info.span_source.to_span(self.tcx),
                             user_ty: None,
                             literal: ty::Const::zero_sized(self.tcx, self.tcx.types.unit),
                         }));
@@ -926,7 +933,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
             };
 
             self.visit_rvalue(&mut rvalue, loc);
-            self.assign(new_temp, rvalue, source_info.span);
+            self.assign(new_temp, rvalue, source_info.span_source);
         } else {
             let terminator = if self.keep_original {
                 self.source[loc.block].terminator().clone()
@@ -935,7 +942,11 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                 let target = match terminator.kind {
                     TerminatorKind::Call { destination: Some((_, target)), .. } => target,
                     ref kind => {
-                        span_bug!(terminator.source_info.span, "{:?} not promotable", kind);
+                        span_bug!(
+                            terminator.source_info.span_source.to_span(self.tcx),
+                            "{:?} not promotable",
+                            kind
+                        );
                     }
                 };
                 Terminator {
@@ -963,12 +974,16 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                             from_hir_call,
                             fn_span,
                         },
-                        source_info: SourceInfo::outermost(terminator.source_info.span),
+                        source_info: SourceInfo::outermost(terminator.source_info.span_source),
                         ..terminator
                     };
                 }
                 ref kind => {
-                    span_bug!(terminator.source_info.span, "{:?} not promotable", kind);
+                    span_bug!(
+                        terminator.source_info.span_source.to_span(self.tcx),
+                        "{:?} not promotable",
+                        kind
+                    );
                 }
             };
         };
@@ -989,7 +1004,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
             let tcx = self.tcx;
             let mut promoted_operand = |ty, span| {
                 promoted.span = span;
-                promoted.local_decls[RETURN_PLACE] = LocalDecl::new(ty, span);
+                promoted.local_decls[RETURN_PLACE] = LocalDecl::new(ty, SpanSource::Span(span));
 
                 Operand::Constant(Box::new(Constant {
                     span,
@@ -1021,7 +1036,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                         )) => {
                             // Use the underlying local for this (necessarily interior) borrow.
                             let ty = local_decls.local_decls()[place.local].ty;
-                            let span = statement.source_info.span;
+                            let span_source = statement.source_info.span_source;
 
                             let ref_ty = tcx.mk_ref(
                                 tcx.lifetimes.re_erased,
@@ -1037,7 +1052,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                             // Create a temp to hold the promoted reference.
                             // This is because `*r` requires `r` to be a local,
                             // otherwise we would use the `promoted` directly.
-                            let mut promoted_ref = LocalDecl::new(ref_ty, span);
+                            let mut promoted_ref = LocalDecl::new(ref_ty, span_source);
                             promoted_ref.source_info = statement.source_info;
                             let promoted_ref = local_decls.push(promoted_ref);
                             assert_eq!(self.temps.push(TempState::Unpromotable), promoted_ref);
@@ -1046,7 +1061,10 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                                 source_info: statement.source_info,
                                 kind: StatementKind::Assign(Box::new((
                                     Place::from(promoted_ref),
-                                    Rvalue::Use(promoted_operand(ref_ty, span)),
+                                    Rvalue::Use(promoted_operand(
+                                        ref_ty,
+                                        span_source.to_span(self.tcx),
+                                    )),
                                 ))),
                             };
                             self.extra_statements.push((loc, promoted_ref_statement));
@@ -1068,7 +1086,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                     match statement.kind {
                         StatementKind::Assign(box (_, Rvalue::Repeat(ref mut operand, _))) => {
                             let ty = operand.ty(local_decls, self.tcx);
-                            let span = statement.source_info.span;
+                            let span = statement.source_info.span_source.to_span(self.tcx);
 
                             Rvalue::Use(mem::replace(operand, promoted_operand(ty, span)))
                         }
@@ -1080,7 +1098,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                     match terminator.kind {
                         TerminatorKind::Call { ref mut args, .. } => {
                             let ty = args[index].ty(local_decls, self.tcx);
-                            let span = terminator.source_info.span;
+                            let span = terminator.source_info.span_source.to_span(self.tcx);
 
                             Rvalue::Use(mem::replace(&mut args[index], promoted_operand(ty, span)))
                         }
@@ -1102,7 +1120,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
                             match &mut operands[index] {
                                 InlineAsmOperand::Const { ref mut value } => {
                                     let ty = value.ty(local_decls, self.tcx);
-                                    let span = terminator.source_info.span;
+                                    let span = terminator.source_info.span_source.to_span(self.tcx);
 
                                     Rvalue::Use(mem::replace(value, promoted_operand(ty, span)))
                                 }
@@ -1123,7 +1141,7 @@ impl<'a, 'tcx> Promoter<'a, 'tcx> {
         );
 
         let span = self.promoted.span;
-        self.assign(RETURN_PLACE, rvalue, span);
+        self.assign(RETURN_PLACE, rvalue, SpanSource::Span(span));
         Some(self.promoted)
     }
 }
@@ -1172,7 +1190,8 @@ pub fn promote_candidates<'tcx>(
         }
 
         // Declare return place local so that `mir::Body::new` doesn't complain.
-        let initial_locals = iter::once(LocalDecl::new(tcx.types.never, body.span)).collect();
+        let initial_locals =
+            iter::once(LocalDecl::new(tcx.types.never, SpanSource::Span(body.span))).collect();
 
         let mut scope = body.source_scopes[candidate.source_info(body).scope].clone();
         scope.parent_scope = None;

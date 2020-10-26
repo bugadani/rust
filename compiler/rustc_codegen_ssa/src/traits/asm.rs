@@ -4,6 +4,7 @@ use crate::mir::place::PlaceRef;
 use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use rustc_hir::def_id::DefId;
 use rustc_hir::{GlobalAsm, LlvmInlineAsmInner};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::Instance;
 use rustc_span::Span;
 use rustc_target::asm::InlineAsmRegOrRegClass;
@@ -43,7 +44,7 @@ pub trait AsmBuilderMethods<'tcx>: BackendTypes {
         ia: &LlvmInlineAsmInner,
         outputs: Vec<PlaceRef<'tcx, Self::Value>>,
         inputs: Vec<Self::Value>,
-        span: Span,
+        span_source: SpanSource,
     ) -> bool;
 
     /// Take an inline assembly expression and splat it out via LLVM

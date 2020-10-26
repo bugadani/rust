@@ -6,6 +6,7 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::{Applicability, DiagnosticBuilder};
 use rustc_index::vec::IndexVec;
 use rustc_infer::infer::NLLRegionVariableOrigin;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::{
     Body, CastKind, ConstraintCategory, FakeReadCause, Local, Location, Operand, Place, Rvalue,
     Statement, StatementKind, TerminatorKind,
@@ -127,7 +128,10 @@ impl BorrowExplanation {
                             TYPE = type_desc,
                             DTOR = dtor_desc
                         );
-                        err.span_label(body.source_info(drop_loc).span, message);
+                        err.span_label(
+                            body.source_info(drop_loc).span_source.to_span(tcx),
+                            message,
+                        );
 
                         if should_note_order {
                             err.note(
@@ -138,7 +142,7 @@ impl BorrowExplanation {
                     }
                     _ => {
                         err.span_label(
-                            local_decl.source_info.span,
+                            local_decl.source_info.span_source.to_span(tcx),
                             format!(
                                 "a temporary with access to the {B}borrow \
                                  is created here ...",
@@ -153,7 +157,10 @@ impl BorrowExplanation {
                             TYPE = type_desc,
                             DTOR = dtor_desc
                         );
-                        err.span_label(body.source_info(drop_loc).span, message);
+                        err.span_label(
+                            body.source_info(drop_loc).span_source.to_span(tcx),
+                            message,
+                        );
 
                         if let Some(info) = &local_decl.is_block_tail {
                             if info.tail_result_is_ignored {
@@ -254,7 +261,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         &self,
         borrow_region: RegionVid,
         outlived_region: RegionVid,
-    ) -> (ConstraintCategory, bool, Span, Option<RegionName>) {
+    ) -> (ConstraintCategory, bool, SpanSource, Option<RegionName>) {
         let (category, from_closure, span) = self.regioncx.best_blame_constraint(
             &self.body,
             borrow_region,
@@ -303,21 +310,21 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
 
         match find_use::find(body, regioncx, tcx, region_sub, location) {
             Some(Cause::LiveVar(local, location)) => {
-                let span = body.source_info(location).span;
+                let span_source = body.source_info(location).span_source;
                 let spans = self
                     .move_spans(Place::from(local).as_ref(), location)
-                    .or_else(|| self.borrow_spans(span, location));
+                    .or_else(|| self.borrow_spans(span_source, location));
 
                 let borrow_location = location;
                 if self.is_use_in_later_iteration_of_loop(borrow_location, location) {
                     let later_use = self.later_use_kind(borrow, spans, location);
-                    BorrowExplanation::UsedLaterInLoop(later_use.0, later_use.1)
+                    BorrowExplanation::UsedLaterInLoop(later_use.0, later_use.1.to_span(tcx))
                 } else {
                     // Check if the location represents a `FakeRead`, and adapt the error
                     // message to the `FakeReadCause` it is from: in particular,
                     // the ones inserted in optimized `let var = <expr>` patterns.
                     let later_use = self.later_use_kind(borrow, spans, location);
-                    BorrowExplanation::UsedLater(later_use.0, later_use.1)
+                    BorrowExplanation::UsedLater(later_use.0, later_use.1.to_span(tcx))
                 }
             }
 
@@ -350,7 +357,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                         BorrowExplanation::MustBeValidFor {
                             category,
                             from_closure,
-                            span,
+                            span: span.to_span(tcx),
                             region_name,
                             opt_place_desc,
                         }
@@ -503,11 +510,11 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         borrow: &BorrowData<'tcx>,
         use_spans: UseSpans<'tcx>,
         location: Location,
-    ) -> (LaterUseKind, Span) {
+    ) -> (LaterUseKind, SpanSource) {
         match use_spans {
             UseSpans::ClosureUse { var_span, .. } => {
                 // Used in a closure.
-                (LaterUseKind::ClosureCapture, var_span)
+                (LaterUseKind::ClosureCapture, SpanSource::Span(var_span))
             }
             UseSpans::PatUse(span)
             | UseSpans::OtherUse(span)
@@ -528,17 +535,17 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                     {
                         // Just point to the function, to reduce the chance of overlapping spans.
                         let function_span = match func {
-                            Operand::Constant(c) => c.span,
+                            Operand::Constant(c) => SpanSource::Span(c.span),
                             Operand::Copy(place) | Operand::Move(place) => {
                                 if let Some(l) = place.as_local() {
                                     let local_decl = &self.body.local_decls[l];
                                     if self.local_names[l].is_none() {
-                                        local_decl.source_info.span
+                                        local_decl.source_info.span_source
                                     } else {
-                                        span
+                                        SpanSource::Span(span)
                                     }
                                 } else {
-                                    span
+                                    SpanSource::Span(span)
                                 }
                             }
                         };
@@ -550,7 +557,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                     LaterUseKind::Other
                 };
 
-                (kind, span)
+                (kind, SpanSource::Span(span))
             }
         }
     }

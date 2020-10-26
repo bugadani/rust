@@ -79,7 +79,8 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
             let local = Local::new(argument_index + 1);
 
             let mir_input_ty = body.local_decls[local].ty;
-            let mir_input_span = body.local_decls[local].source_info.span;
+            let mir_input_span =
+                body.local_decls[local].source_info.span_source.to_span(self.tcx());
             self.equate_normalized_input_or_output(
                 normalized_input_ty,
                 mir_input_ty,
@@ -95,7 +96,8 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
                 // argument N is stored in local N+2.
                 let local = Local::new(argument_index + 2);
                 let mir_input_ty = body.local_decls[local].ty;
-                let mir_input_span = body.local_decls[local].source_info.span;
+                let mir_input_span =
+                    body.local_decls[local].source_info.span_source.to_span(self.tcx());
 
                 // If the user explicitly annotated the input types, enforce those.
                 let user_provided_input_ty =
@@ -114,13 +116,15 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
         );
         if let Some(mir_yield_ty) = body.yield_ty {
             let ur_yield_ty = universal_regions.yield_ty.unwrap();
-            let yield_span = body.local_decls[RETURN_PLACE].source_info.span;
+            let yield_span =
+                body.local_decls[RETURN_PLACE].source_info.span_source.to_span(self.tcx());
             self.equate_normalized_input_or_output(ur_yield_ty, mir_yield_ty, yield_span);
         }
 
         // Return types are a bit more complex. They may contain opaque `impl Trait` types.
         let mir_output_ty = body.local_decls[RETURN_PLACE].ty;
-        let output_span = body.local_decls[RETURN_PLACE].source_info.span;
+        let output_span =
+            body.local_decls[RETURN_PLACE].source_info.span_source.to_span(self.tcx());
         if let Err(terr) = self.eq_opaque_type_and_type(
             mir_output_ty,
             normalized_output_ty,

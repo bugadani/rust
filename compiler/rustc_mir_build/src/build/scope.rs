@@ -86,9 +86,11 @@ use crate::thir::{Expr, ExprRef, LintLevel};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir as hir;
 use rustc_index::vec::IndexVec;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::region;
 use rustc_middle::mir::*;
-use rustc_span::{Span, DUMMY_SP};
+use rustc_middle::ty::TyCtxt;
+use rustc_span::Span;
 
 #[derive(Debug)]
 pub struct Scopes<'tcx> {
@@ -113,7 +115,7 @@ struct Scope {
     region_scope: region::Scope,
 
     /// the span of that region_scope
-    region_scope_span: Span,
+    region_scope_span: SpanSource,
 
     /// set of places to drop when exiting this scope. This starts
     /// out empty but grows as variables are declared during the
@@ -240,7 +242,7 @@ impl DropTree {
         // The root node of the tree doesn't represent a drop, but instead
         // represents the block in the tree that should be jumped to once all
         // of the required drops have been performed.
-        let fake_source_info = SourceInfo::outermost(DUMMY_SP);
+        let fake_source_info = SourceInfo::outermost(SpanSource::DUMMY);
         let fake_data =
             DropData { source_info: fake_source_info, local: Local::MAX, kind: DropKind::Storage };
         let drop_idx = DropIdx::MAX;
@@ -381,7 +383,10 @@ impl DropTree {
                         // might. Since we don't want breakpoints to be placed
                         // here, especially when this is on an unwind path, we
                         // use `DUMMY_SP`.
-                        let source_info = SourceInfo { span: DUMMY_SP, ..drop_data.0.source_info };
+                        let source_info = SourceInfo {
+                            span_source: SpanSource::DUMMY,
+                            ..drop_data.0.source_info
+                        };
                         let terminator = TerminatorKind::Goto { target };
                         cfg.terminate(block, source_info, terminator);
                     }
@@ -406,7 +411,7 @@ impl<'tcx> Scopes<'tcx> {
         self.scopes.push(Scope {
             source_scope: vis_scope,
             region_scope: region_scope.0,
-            region_scope_span: region_scope.1.span,
+            region_scope_span: region_scope.1.span_source,
             drops: vec![],
             moved_locals: vec![],
             cached_unwind_block: None,
@@ -420,11 +425,21 @@ impl<'tcx> Scopes<'tcx> {
         scope
     }
 
-    fn scope_index(&self, region_scope: region::Scope, span: Span) -> usize {
-        self.scopes
-            .iter()
-            .rposition(|scope| scope.region_scope == region_scope)
-            .unwrap_or_else(|| span_bug!(span, "region_scope {:?} does not enclose", region_scope))
+    fn scope_index(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        region_scope: region::Scope,
+        span_source: SpanSource,
+    ) -> usize {
+        self.scopes.iter().rposition(|scope| scope.region_scope == region_scope).unwrap_or_else(
+            || {
+                span_bug!(
+                    span_source.to_span(tcx),
+                    "region_scope {:?} does not enclose",
+                    region_scope
+                )
+            },
+        )
     }
 
     /// Returns the topmost active scope, which is known to be alive until
@@ -443,7 +458,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         &mut self,
         loop_block: Option<BasicBlock>,
         break_destination: Place<'tcx>,
-        span: Span,
+        span: SpanSource,
         f: F,
     ) -> BlockAnd<()>
     where
@@ -534,7 +549,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
             if parent_root != current_root {
                 self.source_scope = self.new_source_scope(
-                    region_scope.1.span,
+                    region_scope.1.span_source,
                     LintLevel::Explicit(current_root),
                     None,
                 );
@@ -582,21 +597,27 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         target: BreakableTarget,
         source_info: SourceInfo,
     ) -> BlockAnd<()> {
-        let span = source_info.span;
-
         let get_scope_index = |scope: region::Scope| {
             // find the loop-scope by its `region::Scope`.
             self.scopes
                 .breakable_scopes
                 .iter()
                 .rposition(|breakable_scope| breakable_scope.region_scope == scope)
-                .unwrap_or_else(|| span_bug!(span, "no enclosing breakable scope found"))
+                .unwrap_or_else(|| {
+                    span_bug!(
+                        source_info.span_source.to_span(self.hir.tcx()),
+                        "no enclosing breakable scope found"
+                    )
+                })
         };
         let (break_index, destination) = match target {
             BreakableTarget::Return => {
                 let scope = &self.scopes.breakable_scopes[0];
                 if scope.break_destination != Place::return_place() {
-                    span_bug!(span, "`return` in item with no return scope");
+                    span_bug!(
+                        source_info.span_source.to_span(self.hir.tcx()),
+                        "`return` in item with no return scope"
+                    );
                 }
                 (0, Some(scope.break_destination))
             }
@@ -624,8 +645,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             assert!(value.is_none(), "`return` and `break` should have a destination");
         }
 
+        let span_source = source_info.span_source;
         let region_scope = self.scopes.breakable_scopes[break_index].region_scope;
-        let scope_index = self.scopes.scope_index(region_scope, span);
+        let scope_index = self.scopes.scope_index(self.hir.tcx(), region_scope, span_source);
         let drops = if destination.is_some() {
             &mut self.scopes.breakable_scopes[break_index].break_drops
         } else {
@@ -679,14 +701,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// Creates a new source scope, nested in the current one.
     crate fn new_source_scope(
         &mut self,
-        span: Span,
+        span_source: SpanSource,
         lint_level: LintLevel,
         safety: Option<Safety>,
     ) -> SourceScope {
         let parent = self.source_scope;
         debug!(
             "new_source_scope({:?}, {:?}, {:?}) - parent({:?})={:?}",
-            span,
+            span_source.to_span(self.hir.tcx()),
             lint_level,
             safety,
             parent,
@@ -703,15 +725,15 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             }),
         };
         self.source_scopes.push(SourceScopeData {
-            span,
+            span: span_source.to_span(self.hir.tcx()),
             parent_scope: Some(parent),
             local_data: ClearCrossCrate::Set(scope_local_data),
         })
     }
 
     /// Given a span and the current source scope, make a SourceInfo.
-    crate fn source_info(&self, span: Span) -> SourceInfo {
-        SourceInfo { span, scope: self.source_scope }
+    crate fn source_info(&self, span_source: SpanSource) -> SourceInfo {
+        SourceInfo { span_source, scope: self.source_scope }
     }
 
     // Finding scopes
@@ -753,7 +775,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     // ================
     crate fn schedule_drop_storage_and_value(
         &mut self,
-        span: Span,
+        span: SpanSource,
         region_scope: region::Scope,
         local: Local,
     ) {
@@ -767,7 +789,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// place, or a function parameter.
     crate fn schedule_drop(
         &mut self,
-        span: Span,
+        span: SpanSource,
         region_scope: region::Scope,
         local: Local,
         drop_kind: DropKind,
@@ -782,7 +804,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             DropKind::Storage => {
                 if local.index() <= self.arg_count {
                     span_bug!(
-                        span,
+                        span.to_span(self.hir.tcx()),
                         "`schedule_drop` called with local {:?} and arg_count {}",
                         local,
                         self.arg_count,
@@ -851,7 +873,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let scope_end = self.hir.tcx().sess.source_map().end_point(region_scope_span);
 
                 scope.drops.push(DropData {
-                    source_info: SourceInfo { span: scope_end, scope: scope.source_scope },
+                    source_info: SourceInfo {
+                        span_source: SpanSource::Span(scope_end),
+                        scope: scope.source_scope,
+                    },
                     local,
                     kind: drop_kind,
                 });
@@ -860,7 +885,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             }
         }
 
-        span_bug!(span, "region scope {:?} not in scope to drop {:?}", region_scope, local);
+        span_source_bug!(span, "region scope {:?} not in scope to drop {:?}", region_scope, local);
     }
 
     /// Indicates that the "local operand" stored in `local` is
@@ -1077,7 +1102,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     crate fn build_drop_and_replace(
         &mut self,
         block: BasicBlock,
-        span: Span,
+        span: SpanSource,
         place: Place<'tcx>,
         value: Operand<'tcx>,
     ) -> BlockAnd<()> {
@@ -1103,7 +1128,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         cond: Operand<'tcx>,
         expected: bool,
         msg: AssertMessage<'tcx>,
-        span: Span,
+        span: SpanSource,
     ) -> BasicBlock {
         let source_info = self.source_info(span);
         let success_block = self.cfg.start_new_block();
@@ -1282,7 +1307,7 @@ impl<'a, 'tcx: 'a> Builder<'a, 'tcx> {
         if let Some(root_block) = blocks[ROOT_NODE] {
             cfg.terminate(
                 root_block,
-                SourceInfo::outermost(fn_span),
+                SourceInfo::outermost(SpanSource::Span(fn_span)),
                 TerminatorKind::GeneratorDrop,
             );
         }
@@ -1324,7 +1349,7 @@ impl<'a, 'tcx: 'a> Builder<'a, 'tcx> {
             let terminator =
                 if should_abort { TerminatorKind::Abort } else { TerminatorKind::Resume };
 
-            cfg.terminate(resume, SourceInfo::outermost(fn_span), terminator);
+            cfg.terminate(resume, SourceInfo::outermost(SpanSource::Span(fn_span)), terminator);
 
             *resume_block = blocks[ROOT_NODE];
         }
@@ -1355,8 +1380,8 @@ impl<'tcx> DropTreeBuilder<'tcx> for GeneratorDrop {
         if let TerminatorKind::Yield { ref mut drop, .. } = term.kind {
             *drop = Some(to);
         } else {
-            span_bug!(
-                term.source_info.span,
+            span_source_bug!(
+                term.source_info.span_source,
                 "cannot enter generator drop tree from {:?}",
                 term.kind
             )
@@ -1389,8 +1414,8 @@ impl<'tcx> DropTreeBuilder<'tcx> for Unwind {
             | TerminatorKind::Yield { .. }
             | TerminatorKind::GeneratorDrop
             | TerminatorKind::FalseEdge { .. }
-            | TerminatorKind::InlineAsm {.. } => {
-                span_bug!(term.source_info.span, "cannot unwind from {:?}", term.kind)
+            | TerminatorKind::InlineAsm { .. } => {
+                span_source_bug!(term.source_info.span_source, "cannot unwind from {:?}", term.kind)
             }
         }
     }

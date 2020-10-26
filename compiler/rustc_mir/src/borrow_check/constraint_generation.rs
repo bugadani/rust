@@ -69,10 +69,16 @@ impl<'cg, 'cx, 'tcx> Visitor<'tcx> for ConstraintGeneration<'cg, 'cx, 'tcx> {
     /// call. Make them live at the location where they appear.
     fn visit_ty(&mut self, ty: Ty<'tcx>, ty_context: TyContext) {
         match ty_context {
-            TyContext::ReturnTy(SourceInfo { span, .. })
-            | TyContext::YieldTy(SourceInfo { span, .. })
-            | TyContext::UserTy(span)
-            | TyContext::LocalDecl { source_info: SourceInfo { span, .. }, .. } => {
+            TyContext::ReturnTy(SourceInfo { span_source, .. })
+            | TyContext::YieldTy(SourceInfo { span_source, .. })
+            | TyContext::LocalDecl { source_info: SourceInfo { span_source, .. }, .. } => {
+                span_bug!(
+                    span_source.to_span(self.infcx.tcx),
+                    "should not be visiting outside of the CFG: {:?}",
+                    ty_context
+                );
+            }
+            TyContext::UserTy(span) => {
                 span_bug!(span, "should not be visiting outside of the CFG: {:?}", ty_context);
             }
             TyContext::Location(location) => {

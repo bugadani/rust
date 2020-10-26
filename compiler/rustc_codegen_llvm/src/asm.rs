@@ -12,6 +12,7 @@ use rustc_codegen_ssa::mir::place::PlaceRef;
 use rustc_codegen_ssa::traits::*;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir as hir;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::span_bug;
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_span::{Pos, Span};
@@ -27,7 +28,7 @@ impl AsmBuilderMethods<'tcx> for Builder<'a, 'll, 'tcx> {
         ia: &hir::LlvmInlineAsmInner,
         outputs: Vec<PlaceRef<'tcx, &'ll Value>>,
         mut inputs: Vec<&'ll Value>,
-        span: Span,
+        span: SpanSource,
     ) -> bool {
         let mut ext_constraints = vec![];
         let mut output_types = vec![];
@@ -97,7 +98,7 @@ impl AsmBuilderMethods<'tcx> for Builder<'a, 'll, 'tcx> {
             ia.volatile,
             ia.alignstack,
             ia.dialect,
-            &[span],
+            &[span.to_span(self.tcx)],
         );
         if r.is_none() {
             return false;

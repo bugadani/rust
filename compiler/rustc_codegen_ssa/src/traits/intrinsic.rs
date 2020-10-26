@@ -1,7 +1,7 @@
 use super::BackendTypes;
 use crate::mir::operand::OperandRef;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, Ty};
-use rustc_span::Span;
 use rustc_target::abi::call::FnAbi;
 
 pub trait IntrinsicCallMethods<'tcx>: BackendTypes {
@@ -14,7 +14,7 @@ pub trait IntrinsicCallMethods<'tcx>: BackendTypes {
         fn_abi: &FnAbi<'tcx, Ty<'tcx>>,
         args: &[OperandRef<'tcx, Self::Value>],
         llresult: Self::Value,
-        span: Span,
+        span_source: SpanSource,
     );
 
     fn abort(&mut self);

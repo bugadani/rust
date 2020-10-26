@@ -250,7 +250,7 @@ impl<'a, 'tcx> Visitor<'tcx> for GatherBorrows<'a, 'tcx> {
             if let TwoPhaseActivation::ActivatedAt(other_location) = borrow_data.activation_location
             {
                 span_bug!(
-                    self.body.source_info(location).span,
+                    self.body.source_info(location).span_source.to_span(self.tcx),
                     "found two uses for 2-phase borrow temporary {:?}: \
                      {:?} and {:?}",
                     temp,
@@ -319,7 +319,7 @@ impl<'a, 'tcx> GatherBorrows<'a, 'tcx> {
             temp
         } else {
             span_bug!(
-                self.body.source_info(start_location).span,
+                self.body.source_info(start_location).span_source.to_span(self.tcx),
                 "expected 2-phase borrow to assign to a local, not `{:?}`",
                 assigned_place,
             );
@@ -339,7 +339,7 @@ impl<'a, 'tcx> GatherBorrows<'a, 'tcx> {
         let old_value = self.pending_activations.insert(temp, borrow_index);
         if let Some(old_index) = old_value {
             span_bug!(
-                self.body.source_info(start_location).span,
+                self.body.source_info(start_location).span_source.to_span(self.tcx),
                 "found already pending activation for temp: {:?} \
                        at borrow_index: {:?} with associated data {:?}",
                 temp,

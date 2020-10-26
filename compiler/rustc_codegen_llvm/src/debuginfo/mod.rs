@@ -23,13 +23,14 @@ use rustc_codegen_ssa::traits::*;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::def_id::{CrateNum, DefId, DefIdMap, LOCAL_CRATE};
 use rustc_index::vec::IndexVec;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir;
 use rustc_middle::ty::layout::HasTyCtxt;
 use rustc_middle::ty::subst::{GenericArgKind, SubstsRef};
 use rustc_middle::ty::{self, Instance, ParamEnv, Ty, TypeFoldable};
 use rustc_session::config::{self, DebugInfo};
 use rustc_span::symbol::Symbol;
-use rustc_span::{self, BytePos, Span};
+use rustc_span::{self, BytePos};
 use rustc_target::abi::{LayoutOf, Primitive, Size};
 
 use libc::c_uint;
@@ -145,7 +146,7 @@ impl DebugInfoBuilderMethods for Builder<'a, 'll, 'tcx> {
         variable_alloca: Self::Value,
         direct_offset: Size,
         indirect_offsets: &[Size],
-        span: Span,
+        span_source: SpanSource,
     ) {
         let cx = self.cx();
 
@@ -171,7 +172,7 @@ impl DebugInfoBuilderMethods for Builder<'a, 'll, 'tcx> {
         // FIXME(eddyb) maybe this information could be extracted from `dbg_var`,
         // to avoid having to pass it down in both places?
         // NB: `var` doesn't seem to know about the column, so that's a limitation.
-        let dbg_loc = cx.create_debug_loc(scope_metadata, span);
+        let dbg_loc = cx.create_debug_loc(scope_metadata, span_source);
         unsafe {
             // FIXME(eddyb) replace `llvm.dbg.declare` with `llvm.dbg.addr`.
             llvm::LLVMRustDIBuilderInsertDeclareAtEnd(
@@ -186,10 +187,13 @@ impl DebugInfoBuilderMethods for Builder<'a, 'll, 'tcx> {
         }
     }
 
-    fn set_source_location(&mut self, scope: &'ll DIScope, span: Span) {
-        debug!("set_source_location: {}", self.sess().source_map().span_to_string(span));
+    fn set_source_location(&mut self, scope: &'ll DIScope, span_source: SpanSource) {
+        debug!(
+            "set_source_location: {}",
+            self.sess().source_map().span_to_string(span_source.to_span(self.cx().tcx()))
+        );
 
-        let dbg_loc = self.cx().create_debug_loc(scope, span);
+        let dbg_loc = self.cx().create_debug_loc(scope, span_source);
 
         unsafe {
             llvm::LLVMSetCurrentDebugLocation(self.llbuilder, dbg_loc);
@@ -527,8 +531,9 @@ impl DebugInfoMethods<'tcx> for CodegenCx<'ll, 'tcx> {
         variable_type: Ty<'tcx>,
         scope_metadata: &'ll DIScope,
         variable_kind: VariableKind,
-        span: Span,
+        span: SpanSource,
     ) -> &'ll DIVariable {
+        let span = span.to_span(self.tcx);
         let loc = self.lookup_debug_loc(span.lo());
         let file_metadata = file_metadata(self, &loc.file, dbg_context.defining_crate);
 

@@ -5,6 +5,7 @@ use crate::build::{BlockAnd, BlockAndExtension, Builder};
 use crate::thir::*;
 use rustc_data_structures::stack::ensure_sufficient_stack;
 use rustc_hir as hir;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::region;
 use rustc_middle::mir::*;
 
@@ -42,7 +43,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         );
         let this = self;
 
-        let expr_span = expr.span;
+        let expr_span = SpanSource::Span(expr.span);
         let source_info = this.source_info(expr_span);
         if let ExprKind::Scope { region_scope, lint_level, value } = expr.kind {
             return this.in_scope((region_scope, source_info), lint_level, |this| {

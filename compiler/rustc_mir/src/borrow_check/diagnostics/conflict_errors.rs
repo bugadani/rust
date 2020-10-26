@@ -5,6 +5,7 @@ use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{AsyncGeneratorKind, GeneratorKind};
 use rustc_index::vec::Idx;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::{
     self, AggregateKind, BindingForm, BorrowKind, ClearCrossCrate, ConstraintCategory,
     FakeReadCause, Local, LocalDecl, LocalInfo, LocalKind, Location, Operand, Place, PlaceRef,
@@ -61,8 +62,9 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             location, desired_action, moved_place, used_place, span, mpi
         );
 
-        let use_spans =
-            self.move_spans(moved_place, location).or_else(|| self.borrow_spans(span, location));
+        let use_spans = self
+            .move_spans(moved_place, location)
+            .or_else(|| self.borrow_spans(SpanSource::Span(span), location));
         let span = use_spans.args_or_use();
 
         let move_site_vec = self.get_moved_indexes(location, mpi);
@@ -354,7 +356,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                 }
                 let span = if let Some(local) = place.as_local() {
                     let decl = &self.body.local_decls[local];
-                    Some(decl.source_info.span)
+                    Some(decl.source_info.span_source.to_span(self.infcx.tcx))
                 } else {
                     None
                 };
@@ -470,14 +472,14 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     pub(in crate::borrow_check) fn report_conflicting_borrow(
         &mut self,
         location: Location,
-        (place, span): (Place<'tcx>, Span),
+        (place, span): (Place<'tcx>, Span), // FIXME
         gen_borrow_kind: BorrowKind,
         issued_borrow: &BorrowData<'tcx>,
     ) -> DiagnosticBuilder<'cx> {
         let issued_spans = self.retrieve_borrow_spans(issued_borrow);
         let issued_span = issued_spans.args_or_use();
 
-        let borrow_spans = self.borrow_spans(span, location);
+        let borrow_spans = self.borrow_spans(SpanSource::Span(span), location);
         let span = borrow_spans.args_or_use();
 
         let container_name = if issued_spans.for_generator() || borrow_spans.for_generator() {
@@ -838,7 +840,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         let borrow_span = borrow_spans.var_or_use();
 
         assert!(root_place.projection.is_empty());
-        let proper_span = self.body.local_decls[root_place.local].source_info.span;
+        let proper_span_source = self.body.local_decls[root_place.local].source_info.span_source;
 
         let root_place_projection = self.infcx.tcx.intern_place_elems(root_place.projection);
 
@@ -951,7 +953,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                 &borrow,
                 drop_span,
                 borrow_spans,
-                proper_span,
+                proper_span_source,
                 explanation,
             ),
         };
@@ -1167,9 +1169,10 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         borrow: &BorrowData<'tcx>,
         drop_span: Span,
         borrow_spans: UseSpans<'tcx>,
-        proper_span: Span,
+        proper_span_source: SpanSource,
         explanation: BorrowExplanation,
     ) -> DiagnosticBuilder<'cx> {
+        let proper_span = proper_span_source.to_span(self.infcx.tcx);
         debug!(
             "report_temporary_value_does_not_live_long_enough(\
              {:?}, {:?}, {:?}, {:?}\
@@ -1191,7 +1194,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             }
         }
 
-        let mut err = self.temporary_value_borrowed_for_too_long(proper_span);
+        let mut err = self.temporary_value_borrowed_for_too_long(proper_span_source);
         err.span_label(proper_span, "creates a temporary which is freed while still in use");
         err.span_label(drop_span, "temporary value is freed at the end of this statement");
 
@@ -1235,7 +1238,9 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         };
 
         // FIXME use a better heuristic than Spans
-        let reference_desc = if return_span == self.body.source_info(borrow.reserve_location).span {
+        let reference_desc = if return_span
+            == self.body.source_info(borrow.reserve_location).span_source.to_span(self.infcx.tcx)
+        {
             "reference to"
         } else {
             "value referencing"
@@ -1566,7 +1571,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         &mut self,
         _location: Location,
         (place, span): (Place<'tcx>, Span),
-        assigned_span: Span,
+        assigned_span: SpanSource,
         err_place: Place<'tcx>,
     ) {
         let (from_arg, local_decl, local_name) = match err_place.as_local() {
@@ -1596,9 +1601,12 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                 ..
             })
             | None => (self.describe_any_place(place.as_ref()), assigned_span),
-            Some(decl) => (self.describe_any_place(err_place.as_ref()), decl.source_info.span),
+            Some(decl) => {
+                (self.describe_any_place(err_place.as_ref()), decl.source_info.span_source)
+            }
         };
 
+        let assigned_span = assigned_span.to_span(self.infcx.tcx);
         let mut err = self.cannot_reassign_immutable(span, &place_description, from_arg);
         let msg = if from_arg {
             "cannot assign to immutable argument"
@@ -1614,7 +1622,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             if let Some(name) = local_name {
                 if decl.can_be_made_mutable() {
                     err.span_suggestion(
-                        decl.source_info.span,
+                        decl.source_info.span_source.to_span(self.infcx.tcx),
                         "make this binding mutable",
                         format!("mut {}", name),
                         Applicability::MachineApplicable,

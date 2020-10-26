@@ -1,4 +1,5 @@
 use rustc_errors::{struct_span_err, DiagnosticBuilder, DiagnosticId};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_span::{MultiSpan, Span};
 
@@ -457,8 +458,16 @@ impl<'cx, 'tcx> crate::borrow_check::MirBorrowckCtxt<'cx, 'tcx> {
         struct_span_err!(self, span, E0712, "thread-local variable borrowed past end of function",)
     }
 
-    crate fn temporary_value_borrowed_for_too_long(&self, span: Span) -> DiagnosticBuilder<'cx> {
-        struct_span_err!(self, span, E0716, "temporary value dropped while borrowed",)
+    crate fn temporary_value_borrowed_for_too_long(
+        &self,
+        span: SpanSource,
+    ) -> DiagnosticBuilder<'cx> {
+        struct_span_err!(
+            self,
+            span.to_span(self.infcx.tcx),
+            E0716,
+            "temporary value dropped while borrowed",
+        )
     }
 
     fn struct_span_err_with_code<S: Into<MultiSpan>>(

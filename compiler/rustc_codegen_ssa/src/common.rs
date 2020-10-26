@@ -4,6 +4,7 @@ use rustc_errors::struct_span_err;
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_hir::LangItem;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::ty::{Ty, TyCtxt};
 use rustc_session::Session;
 use rustc_span::Span;
@@ -116,11 +117,16 @@ mod temp_stable_hash_impls {
     }
 }
 
-pub fn langcall(tcx: TyCtxt<'_>, span: Option<Span>, msg: &str, li: LangItem) -> DefId {
+pub fn langcall(
+    tcx: TyCtxt<'_>,
+    span_source: Option<SpanSource>,
+    msg: &str,
+    li: LangItem,
+) -> DefId {
     tcx.lang_items().require(li).unwrap_or_else(|s| {
         let msg = format!("{} {}", msg, s);
-        match span {
-            Some(span) => tcx.sess.span_fatal(span, &msg[..]),
+        match span_source {
+            Some(span_source) => tcx.sess.span_fatal(span_source.to_span(tcx), &msg[..]),
             None => tcx.sess.fatal(&msg[..]),
         }
     })

@@ -3,10 +3,10 @@ use crate::build::ForGuard::OutsideGuard;
 use crate::build::{BlockAnd, BlockAndExtension, BlockFrame, Builder};
 use crate::thir::*;
 use rustc_hir as hir;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_session::lint::builtin::UNSAFE_OP_IN_UNSAFE_FN;
 use rustc_session::lint::Level;
-use rustc_span::Span;
 
 impl<'a, 'tcx> Builder<'a, 'tcx> {
     crate fn ast_block(
@@ -25,6 +25,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             targeted_by_break,
             safety_mode,
         } = self.hir.mirror(ast_block);
+        let span = SpanSource::Span(span);
+
         self.in_opt_scope(opt_destruction_scope.map(|de| (de, source_info)), move |this| {
             this.in_scope((region_scope, source_info), LintLevel::Inherited, move |this| {
                 if targeted_by_break {
@@ -49,7 +51,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         &mut self,
         destination: Place<'tcx>,
         mut block: BasicBlock,
-        span: Span,
+        span: SpanSource,
         stmts: Vec<StmtRef<'tcx>>,
         expr: Option<ExprRef<'tcx>>,
         safety_mode: BlockSafety,
@@ -108,6 +110,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     // Declare the bindings, which may create a source scope.
                     let remainder_span =
                         remainder_scope.span(this.hir.tcx(), &this.hir.region_scope_tree);
+                    let remainder_span = SpanSource::Span(remainder_span);
 
                     let visibility_scope =
                         Some(this.new_source_scope(remainder_span, LintLevel::Inherited, None));
@@ -127,7 +130,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                             remainder_span,
                                             &pattern,
                                             ArmHasGuard(false),
-                                            Some((None, initializer_span)),
+                                            Some((None, SpanSource::Span(initializer_span))),
                                         );
                                         this.expr_into_pattern(block, pattern, init)
                                     })
@@ -152,8 +155,18 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             &pattern,
                             UserTypeProjections::none(),
                             &mut |this, _, _, _, node, span, _, _| {
-                                this.storage_live_binding(block, node, span, OutsideGuard, true);
-                                this.schedule_drop_for_binding(node, span, OutsideGuard);
+                                this.storage_live_binding(
+                                    block,
+                                    node,
+                                    SpanSource::Span(span),
+                                    OutsideGuard,
+                                    true,
+                                );
+                                this.schedule_drop_for_binding(
+                                    node,
+                                    SpanSource::Span(span),
+                                    OutsideGuard,
+                                );
                             },
                         )
                     }
@@ -210,7 +223,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     }
 
     /// If we are changing the safety mode, create a new source scope
-    fn update_source_scope_for_safety_mode(&mut self, span: Span, safety_mode: BlockSafety) {
+    fn update_source_scope_for_safety_mode(&mut self, span: SpanSource, safety_mode: BlockSafety) {
         debug!("update_source_scope_for({:?}, {:?})", span, safety_mode);
         let new_unsafety = match safety_mode {
             BlockSafety::Safe => None,
@@ -232,10 +245,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 Some(Safety::BuiltinUnsafe)
             }
             BlockSafety::PopUnsafe => {
-                self.push_unsafe_count = self
-                    .push_unsafe_count
-                    .checked_sub(1)
-                    .unwrap_or_else(|| span_bug!(span, "unsafe count underflow"));
+                self.push_unsafe_count =
+                    self.push_unsafe_count.checked_sub(1).unwrap_or_else(|| {
+                        span_bug!(span.to_span(self.hir.tcx()), "unsafe count underflow")
+                    });
                 if self.push_unsafe_count == 0 { Some(self.unpushed_unsafe) } else { None }
             }
         };

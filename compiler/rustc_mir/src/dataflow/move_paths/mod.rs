@@ -1,9 +1,9 @@
 use core::slice::Iter;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_index::vec::{Enumerated, IndexVec};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{ParamEnv, Ty, TyCtxt};
-use rustc_span::Span;
 use smallvec::SmallVec;
 
 use std::fmt;
@@ -276,10 +276,10 @@ impl fmt::Debug for Init {
 }
 
 impl Init {
-    crate fn span<'tcx>(&self, body: &Body<'tcx>) -> Span {
+    crate fn span<'tcx>(&self, body: &Body<'tcx>) -> SpanSource {
         match self.location {
-            InitLocation::Argument(local) => body.local_decls[local].source_info.span,
-            InitLocation::Statement(location) => body.source_info(location).span,
+            InitLocation::Argument(local) => body.local_decls[local].source_info.span_source,
+            InitLocation::Statement(location) => body.source_info(location).span_source,
         }
     }
 }

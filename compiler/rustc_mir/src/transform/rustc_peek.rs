@@ -201,7 +201,7 @@ impl PeekCall {
     ) -> Option<Self> {
         use mir::Operand;
 
-        let span = terminator.source_info.span;
+        let span = terminator.source_info.span_source.to_span(tcx);
         if let mir::TerminatorKind::Call { func: Operand::Constant(func), args, .. } =
             &terminator.kind
         {

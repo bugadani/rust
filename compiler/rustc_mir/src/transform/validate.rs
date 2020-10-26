@@ -151,7 +151,7 @@ struct TypeChecker<'a, 'tcx> {
 
 impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
     fn fail(&self, location: Location, msg: impl AsRef<str>) {
-        let span = self.body.source_info(location).span;
+        let span = self.body.source_info(location).span_source.to_span(self.tcx);
         // We use `delay_span_bug` as we might see broken MIR when other errors have already
         // occurred.
         self.tcx.sess.diagnostic().delay_span_bug(
@@ -240,7 +240,7 @@ impl<'a, 'tcx> Visitor<'tcx> for TypeChecker<'a, 'tcx> {
         // `Operand::Copy` is only supposed to be used with `Copy` types.
         if let Operand::Copy(place) = operand {
             let ty = place.ty(&self.body.local_decls, self.tcx).ty;
-            let span = self.body.source_info(location).span;
+            let span = self.body.source_info(location).span_source.to_span(self.tcx);
 
             if !ty.is_copy_modulo_regions(self.tcx.at(SpanSource::Span(span)), self.param_env) {
                 self.fail(location, format!("`Operand::Copy` with non-`Copy` type {}", ty));

@@ -27,7 +27,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             .or_else(|| {
                 debug!("get_var_name_and_span_for_region: attempting argument");
                 self.get_argument_index_for_region(tcx, fr).map(|index| {
-                    self.get_argument_name_and_span_for_region(body, local_names, index)
+                    self.get_argument_name_and_span_for_region(tcx, body, local_names, index)
                 })
             })
     }
@@ -108,6 +108,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// declared.
     crate fn get_argument_name_and_span_for_region(
         &self,
+        tcx: TyCtxt<'tcx>,
         body: &Body<'tcx>,
         local_names: &IndexVec<Local, Option<Symbol>>,
         argument_index: usize,
@@ -117,7 +118,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         debug!("get_argument_name_and_span_for_region: argument_local={:?}", argument_local);
 
         let argument_name = local_names[argument_local];
-        let argument_span = body.local_decls[argument_local].source_info.span;
+        let argument_span = body.local_decls[argument_local].source_info.span_source.to_span(tcx);
         debug!(
             "get_argument_name_and_span_for_region: argument_name={:?} argument_span={:?}",
             argument_name, argument_span

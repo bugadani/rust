@@ -121,7 +121,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                                 local,
                                 opt_match_place,
                                 match_span,
-                                stmt_source_info.span,
+                                stmt_source_info.span_source.to_span(self.infcx.tcx), // FIXME
                             );
                             return;
                         }
@@ -521,7 +521,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
     fn add_move_error_details(&self, err: &mut DiagnosticBuilder<'a>, binds_to: &[Local]) {
         for (j, local) in binds_to.iter().enumerate() {
             let bind_to = &self.body.local_decls[*local];
-            let binding_span = bind_to.source_info.span;
+            let binding_span = bind_to.source_info.span_source.to_span(self.infcx.tcx);
 
             if j == 0 {
                 err.span_label(binding_span, "data moved here");

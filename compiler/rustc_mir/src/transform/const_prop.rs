@@ -23,7 +23,7 @@ use rustc_middle::ty::layout::{HasTyCtxt, LayoutError, TyAndLayout};
 use rustc_middle::ty::subst::{InternalSubsts, Subst};
 use rustc_middle::ty::{self, ConstInt, ConstKind, Instance, ParamEnv, Ty, TyCtxt, TypeFoldable};
 use rustc_session::lint;
-use rustc_span::{def_id::DefId, Span};
+use rustc_span::def_id::DefId;
 use rustc_target::abi::{HasDataLayout, LayoutOf, Size, TargetDataLayout};
 use rustc_trait_selection::traits;
 
@@ -514,11 +514,16 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
         panic: AssertKind<impl std::fmt::Debug>,
     ) -> Option<()> {
         let lint_root = self.lint_root(source_info)?;
-        self.tcx.struct_span_lint_hir(lint, lint_root, source_info.span, |lint| {
-            let mut err = lint.build(message);
-            err.span_label(source_info.span, format!("{:?}", panic));
-            err.emit()
-        });
+        self.tcx.struct_span_lint_hir(
+            lint,
+            lint_root,
+            source_info.span_source.to_span(self.tcx),
+            |lint| {
+                let mut err = lint.build(message);
+                err.span_label(source_info.span_source.to_span(self.tcx), format!("{:?}", panic));
+                err.emit()
+            },
+        );
         None
     }
 
@@ -626,7 +631,7 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
                             *operand = self.operand_from_scalar(
                                 scalar,
                                 value.layout.ty,
-                                self.source_info.unwrap().span,
+                                self.source_info.unwrap().span_source,
                             );
                         }
                     }
@@ -780,9 +785,14 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
     }
 
     /// Creates a new `Operand::Constant` from a `Scalar` value
-    fn operand_from_scalar(&self, scalar: Scalar, ty: Ty<'tcx>, span: Span) -> Operand<'tcx> {
+    fn operand_from_scalar(
+        &self,
+        scalar: Scalar,
+        ty: Ty<'tcx>,
+        span_source: SpanSource,
+    ) -> Operand<'tcx> {
         Operand::Constant(Box::new(Constant {
-            span,
+            span: span_source.to_span(self.tcx),
             user_ty: None,
             literal: ty::Const::from_scalar(self.tcx, scalar, ty),
         }))
@@ -822,7 +832,7 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
                     *rval = Rvalue::Use(self.operand_from_scalar(
                         scalar,
                         value.layout.ty,
-                        source_info.span,
+                        source_info.span_source,
                     ));
                 }
                 Immediate::ScalarPair(
@@ -861,7 +871,7 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
                                 // Assign entire constant in a single statement.
                                 // We can't use aggregates, as we run after the aggregate-lowering `MirPhase`.
                                 *rval = Rvalue::Use(Operand::Constant(Box::new(Constant {
-                                    span: source_info.span,
+                                    span: source_info.span_source.to_span(self.tcx),
                                     user_ty: None,
                                     literal: self.ecx.tcx.mk_const(ty::Const {
                                         ty,
@@ -1220,7 +1230,7 @@ impl<'mir, 'tcx> MutVisitor<'tcx> for ConstPropagator<'mir, 'tcx> {
                                 *cond = self.operand_from_scalar(
                                     scalar,
                                     self.tcx.types.bool,
-                                    source_info.span,
+                                    source_info.span_source,
                                 );
                             }
                         }

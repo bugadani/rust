@@ -241,13 +241,13 @@ impl Validator<'mir, 'tcx> {
                     continue;
                 }
 
-                self.span = local.source_info.span;
+                self.span = local.source_info.span_source.to_span(tcx);
                 self.check_local_or_return_ty(local.ty, idx);
             }
 
             // impl trait is gone in MIR, so check the return type of a const fn by its signature
             // instead of the type of the return place.
-            self.span = body.local_decls[RETURN_PLACE].source_info.span;
+            self.span = body.local_decls[RETURN_PLACE].source_info.span_source.to_span(tcx); // FIXME
             let return_ty = tcx.fn_sig(def_id).output();
             self.check_local_or_return_ty(return_ty.skip_binder(), RETURN_PLACE);
         }
@@ -323,12 +323,12 @@ impl Validator<'mir, 'tcx> {
         }
     }
 
-    fn check_static(&mut self, def_id: DefId, span: Span) {
+    fn check_static(&mut self, def_id: DefId, span_source: SpanSource) {
         assert!(
             !self.tcx.is_thread_local_static(def_id),
             "tls access is checked in `Rvalue::ThreadLocalRef"
         );
-        self.check_op_spanned(ops::StaticAccess, span)
+        self.check_op_spanned(ops::StaticAccess, span_source.to_span(self.tcx))
     }
 
     fn check_local_or_return_ty(&mut self, ty: Ty<'tcx>, local: Local) {
@@ -641,7 +641,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
         self.super_operand(op, location);
         if let Operand::Constant(c) = op {
             if let Some(def_id) = c.check_static_ptr(self.tcx) {
-                self.check_static(def_id, self.span);
+                self.check_static(def_id, SpanSource::Span(self.span));
             }
         }
     }
@@ -673,8 +673,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
                         if let (local, []) = (place_local, proj_base) {
                             let decl = &self.body.local_decls[local];
                             if let Some(box LocalInfo::StaticRef { def_id, .. }) = decl.local_info {
-                                let span = decl.source_info.span;
-                                self.check_static(def_id, span);
+                                self.check_static(def_id, decl.source_info.span_source);
                                 return;
                             }
                         }
@@ -706,7 +705,7 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 
     fn visit_source_info(&mut self, source_info: &SourceInfo) {
         trace!("visit_source_info: source_info={:?}", source_info);
-        self.span = source_info.span;
+        self.span = source_info.span_source.to_span(self.tcx);
     }
 
     fn visit_statement(&mut self, statement: &Statement<'tcx>, location: Location) {
@@ -752,9 +751,11 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
                         self.check_op(ops::FnCallIndirect);
                         return;
                     }
-                    _ => {
-                        span_bug!(terminator.source_info.span, "invalid callee of type {:?}", fn_ty)
-                    }
+                    _ => span_bug!(
+                        terminator.source_info.span_source.to_span(tcx),
+                        "invalid callee of type {:?}",
+                        fn_ty
+                    ),
                 };
 
                 // Resolve a trait method call to its concrete implementation, which may be in a
@@ -865,7 +866,8 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 
                 let needs_drop = if let Some(local) = dropped_place.as_local() {
                     // Use the span where the local was declared as the span of the drop error.
-                    err_span = self.body.local_decls[local].source_info.span;
+                    err_span =
+                        self.body.local_decls[local].source_info.span_source.to_span(self.tcx);
                     self.qualifs.needs_drop(self.ccx, local, location)
                 } else {
                     true
@@ -873,7 +875,11 @@ impl Visitor<'tcx> for Validator<'mir, 'tcx> {
 
                 if needs_drop {
                     self.check_op_spanned(
-                        ops::LiveDrop { dropped_at: Some(terminator.source_info.span) },
+                        ops::LiveDrop {
+                            dropped_at: Some(
+                                terminator.source_info.span_source.to_span(self.tcx), //FIXME
+                            ),
+                        },
                         err_span,
                     );
                 }

@@ -12,6 +12,7 @@ use crate::MemFlags;
 use rustc_ast as ast;
 use rustc_hir::lang_items::LangItem;
 use rustc_index::vec::Idx;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::interpret::ConstValue;
 use rustc_middle::mir::AssertKind;
 use rustc_middle::mir::{self, SwitchTargets};
@@ -50,7 +51,7 @@ impl<'a, 'tcx> TerminatorCodegenHelper<'tcx> {
         fx: &mut FunctionCx<'a, 'tcx, Bx>,
         target: mir::BasicBlock,
     ) -> (Bx::BasicBlock, bool) {
-        let span = self.terminator.source_info.span;
+        let span_source = self.terminator.source_info.span_source;
         let lltarget = fx.blocks[target];
         let target_funclet = fx.cleanup_kinds[target].funclet_bb(target);
         match (self.funclet_bb, target_funclet) {
@@ -60,7 +61,11 @@ impl<'a, 'tcx> TerminatorCodegenHelper<'tcx> {
             }
             // jump *into* cleanup - need a landing pad if GNU
             (None, Some(_)) => (fx.landing_pad_to(target), false),
-            (Some(_), None) => span_bug!(span, "{:?} - jump out of cleanup?", self.terminator),
+            (Some(_), None) => span_bug!(
+                span_source.to_span(fx.cx.tcx()),
+                "{:?} - jump out of cleanup?",
+                self.terminator
+            ),
             (Some(_), Some(_)) => (fx.landing_pad_to(target), true),
         }
     }
@@ -363,7 +368,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         target: mir::BasicBlock,
         cleanup: Option<mir::BasicBlock>,
     ) {
-        let span = terminator.source_info.span;
+        let span_source = terminator.source_info.span_source;
         let cond = self.codegen_operand(&mut bx, cond).immediate();
         let mut const_cond = bx.const_to_opt_u128(cond, false).map(|c| c == 1);
 
@@ -405,7 +410,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         self.set_debug_loc(&mut bx, terminator.source_info);
 
         // Get the location information.
-        let location = self.get_caller_location(&mut bx, span).immediate();
+        let location = self.get_caller_location(&mut bx, span_source).immediate();
 
         // Put together the arguments to the panic entry point.
         let (lang_item, args) = match msg {
@@ -426,7 +431,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         };
 
         // Obtain the panic entry point.
-        let def_id = common::langcall(bx.tcx(), Some(span), "", lang_item);
+        let def_id = common::langcall(bx.tcx(), Some(span_source), "", lang_item);
         let instance = ty::Instance::mono(bx.tcx(), def_id);
         let fn_abi = FnAbi::of_instance(&bx, instance, &[]);
         let llfn = bx.get_fn_addr(instance);
@@ -442,7 +447,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         bx: &mut Bx,
         intrinsic: Option<Symbol>,
         instance: Option<Instance<'tcx>>,
-        span: Span,
+        span_source: SpanSource,
         destination: &Option<(mir::Place<'tcx>, mir::BasicBlock)>,
         cleanup: Option<mir::BasicBlock>,
     ) -> bool {
@@ -484,11 +489,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     }
                 });
                 let msg = bx.const_str(Symbol::intern(&msg_str));
-                let location = self.get_caller_location(bx, span).immediate();
+                let location = self.get_caller_location(bx, span_source).immediate();
 
                 // Obtain the panic entry point.
                 // FIXME: dedup this with `codegen_assert_terminator` above.
-                let def_id = common::langcall(bx.tcx(), Some(span), "", LangItem::Panic);
+                let def_id = common::langcall(bx.tcx(), Some(span_source), "", LangItem::Panic);
                 let instance = ty::Instance::mono(bx.tcx(), def_id);
                 let fn_abi = FnAbi::of_instance(bx, instance, &[]);
                 let llfn = bx.get_fn_addr(instance);
@@ -529,7 +534,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         cleanup: Option<mir::BasicBlock>,
         fn_span: Span,
     ) {
-        let span = terminator.source_info.span;
+        let span_source = terminator.source_info.span_source;
         // Create the callee. This is a fn ptr or zero-sized and hence a kind of scalar.
         let callee = self.codegen_operand(&mut bx, func);
 
@@ -606,7 +611,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             &mut bx,
             intrinsic,
             instance,
-            span,
+            span_source,
             destination,
             cleanup,
         ) {
@@ -627,7 +632,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 
         if intrinsic == Some(sym::caller_location) {
             if let Some((_, target)) = destination.as_ref() {
-                let location = self.get_caller_location(&mut bx, fn_span);
+                let location = self.get_caller_location(&mut bx, SpanSource::Span(fn_span));
 
                 if let ReturnDest::IndirectOperand(tmp, _) = ret_dest {
                     location.val.store(&mut bx, tmp);
@@ -672,7 +677,10 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             );
                             return OperandRef { val: Immediate(llval), layout: bx.layout_of(ty) };
                         } else {
-                            span_bug!(span, "shuffle indices must be constant");
+                            span_bug!(
+                                span_source.to_span(bx.tcx()),
+                                "shuffle indices must be constant"
+                            );
                         }
                     }
 
@@ -686,7 +694,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 &fn_abi,
                 &args,
                 dest,
-                terminator.source_info.span,
+                span_source,
             );
 
             if let ReturnDest::IndirectOperand(dst, _) = ret_dest {
@@ -736,7 +744,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             }
                         }
 
-                        span_bug!(span, "receiver has no non-zero-sized fields {:?}", op);
+                        span_bug!(
+                            span_source.to_span(bx.tcx()),
+                            "receiver has no non-zero-sized fields {:?}",
+                            op
+                        );
                     }
 
                     // now that we have `*dyn Trait` or `&dyn Trait`, split it up into its
@@ -758,7 +770,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     llargs.push(data_ptr);
                     continue;
                 } else {
-                    span_bug!(span, "can't codegen a virtual call on {:?}", op);
+                    span_bug!(
+                        span_source.to_span(bx.tcx()),
+                        "can't codegen a virtual call on {:?}",
+                        op
+                    );
                 }
             }
 
@@ -793,7 +809,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 args.len() + 1,
                 "#[track_caller] fn's must have 1 more argument in their ABI than in their MIR",
             );
-            let location = self.get_caller_location(&mut bx, fn_span);
+            let location = self.get_caller_location(&mut bx, SpanSource::Span(fn_span));
             debug!(
                 "codegen_call_terminator({:?}): location={:?} (fn_span {:?})",
                 terminator, location, fn_span
@@ -806,7 +822,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         let fn_ptr = match (llfn, instance) {
             (Some(llfn), _) => llfn,
             (None, Some(instance)) => bx.get_fn_addr(instance),
-            _ => span_bug!(span, "no llfn for call"),
+            _ => span_bug!(span_source.to_span(self.cx.tcx()), "no llfn for call"),
         };
 
         if let Some((_, target)) = destination.as_ref() {
@@ -834,7 +850,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         line_spans: &[Span],
         destination: Option<mir::BasicBlock>,
     ) {
-        let span = terminator.source_info.span;
+        let span = terminator.source_info.span_source.to_span(bx.tcx());
 
         let operands: Vec<_> = operands
             .iter()
@@ -1179,9 +1195,18 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         }
     }
 
-    fn get_caller_location(&mut self, bx: &mut Bx, span: Span) -> OperandRef<'tcx, Bx::Value> {
+    fn get_caller_location(
+        &mut self,
+        bx: &mut Bx,
+        span_source: SpanSource,
+    ) -> OperandRef<'tcx, Bx::Value> {
         self.caller_location.unwrap_or_else(|| {
-            let topmost = span.ctxt().outer_expn().expansion_cause().unwrap_or(span);
+            let topmost = span_source
+                .to_span(bx.tcx())
+                .ctxt()
+                .outer_expn()
+                .expansion_cause()
+                .unwrap_or(span_source.to_span(bx.tcx()));
             let caller = bx.tcx().sess.source_map().lookup_char_pos(topmost.lo());
             let const_loc = bx.tcx().const_caller_location((
                 Symbol::intern(&caller.file.name.to_string()),

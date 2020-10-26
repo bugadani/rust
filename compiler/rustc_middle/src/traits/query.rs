@@ -7,6 +7,7 @@
 
 use crate::ich::StableHashingContext;
 use crate::infer::canonical::{Canonical, QueryResponse};
+use crate::traits::SpanSource;
 use crate::ty::error::TypeError;
 use crate::ty::subst::GenericArg;
 use crate::ty::{self, Ty, TyCtxt};
@@ -14,7 +15,6 @@ use crate::ty::{self, Ty, TyCtxt};
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 use rustc_data_structures::sync::Lrc;
 use rustc_errors::struct_span_err;
-use rustc_span::source_map::Span;
 use std::iter::FromIterator;
 use std::mem;
 
@@ -127,11 +127,11 @@ pub struct DropckOutlivesResult<'tcx> {
 }
 
 impl<'tcx> DropckOutlivesResult<'tcx> {
-    pub fn report_overflows(&self, tcx: TyCtxt<'tcx>, span: Span, ty: Ty<'tcx>) {
+    pub fn report_overflows(&self, tcx: TyCtxt<'tcx>, span_source: SpanSource, ty: Ty<'tcx>) {
         if let Some(overflow_ty) = self.overflows.get(0) {
             let mut err = struct_span_err!(
                 tcx.sess,
-                span,
+                span_source.to_span(tcx),
                 E0320,
                 "overflow while adding drop-check rules for {}",
                 ty,
@@ -144,10 +144,10 @@ impl<'tcx> DropckOutlivesResult<'tcx> {
     pub fn into_kinds_reporting_overflows(
         self,
         tcx: TyCtxt<'tcx>,
-        span: Span,
+        span_source: SpanSource,
         ty: Ty<'tcx>,
     ) -> Vec<GenericArg<'tcx>> {
-        self.report_overflows(tcx, span, ty);
+        self.report_overflows(tcx, span_source, ty);
         let DropckOutlivesResult { kinds, overflows: _ } = self;
         kinds
     }

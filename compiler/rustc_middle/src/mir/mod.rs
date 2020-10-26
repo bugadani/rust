@@ -1031,9 +1031,8 @@ impl<'tcx> LocalDecl<'tcx> {
 
     /// Creates a new `LocalDecl` for a temporary: mutable, non-internal.
     #[inline]
-    pub fn new(ty: Ty<'tcx>, span: Span) -> Self {
-        // FIXME
-        Self::with_source_info(ty, SourceInfo::outermost(SpanSource::Span(span)))
+    pub fn new(ty: Ty<'tcx>, span_source: SpanSource) -> Self {
+        Self::with_source_info(ty, SourceInfo::outermost(span_source))
     }
 
     /// Like `LocalDecl::new`, but takes a `SourceInfo` instead of a `Span`.

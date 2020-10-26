@@ -340,7 +340,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
                     RegionResolutionError::GenericBoundFailure(origin, param_ty, sub) => {
                         self.report_generic_bound_failure(
-                            origin.span_source().to_span(self.tcx),
+                            origin.span_source(),
                             Some(origin),
                             param_ty,
                             sub,
@@ -1851,17 +1851,17 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
     pub fn report_generic_bound_failure(
         &self,
-        span: Span,
+        span_source: SpanSource,
         origin: Option<SubregionOrigin<'tcx>>,
         bound_kind: GenericKind<'tcx>,
         sub: Region<'tcx>,
     ) {
-        self.construct_generic_bound_failure(span, origin, bound_kind, sub).emit();
+        self.construct_generic_bound_failure(span_source, origin, bound_kind, sub).emit();
     }
 
     pub fn construct_generic_bound_failure(
         &self,
-        span: Span,
+        span_source: SpanSource,
         origin: Option<SubregionOrigin<'tcx>>,
         bound_kind: GenericKind<'tcx>,
         sub: Region<'tcx>,
@@ -2025,8 +2025,10 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                         let tail = if has_lifetimes { " +" } else { "" };
                         (sp, format!("{}: {}{}", bound_kind, new_lt, tail))
                     };
-                    let mut sugg =
-                        vec![suggestion, (span.shrink_to_hi(), format!(" + {}", new_lt))];
+                    let mut sugg = vec![
+                        suggestion,
+                        (span_source.to_span(self.tcx).shrink_to_hi(), format!(" + {}", new_lt)),
+                    ];
                     if let Some(lt) = add_lt_sugg {
                         sugg.push(lt);
                         sugg.rotate_right(1);
@@ -2042,7 +2044,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 // Does the required lifetime have a nice name we can print?
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0309,
                     "{} may not live long enough",
                     labeled_user_string
@@ -2059,7 +2061,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 // Does the required lifetime have a nice name we can print?
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0310,
                     "{} may not live long enough",
                     labeled_user_string
@@ -2072,7 +2074,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 // If not, be less specific.
                 let mut err = struct_span_err!(
                     self.tcx.sess,
-                    span,
+                    span_source.to_span(self.tcx),
                     E0311,
                     "{} may not live long enough",
                     labeled_user_string

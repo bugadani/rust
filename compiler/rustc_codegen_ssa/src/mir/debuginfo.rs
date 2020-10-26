@@ -1,12 +1,14 @@
+use crate::rustc_middle::ty::layout::HasTyCtxt;
 use crate::traits::*;
 use rustc_hir::def_id::CrateNum;
 use rustc_index::vec::IndexVec;
 use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir;
 use rustc_middle::ty;
 use rustc_session::config::DebugInfo;
 use rustc_span::symbol::{kw, Symbol};
-use rustc_span::{BytePos, Span};
+use rustc_span::BytePos;
 use rustc_target::abi::{LayoutOf, Size};
 
 use super::operand::OperandValue;
@@ -54,34 +56,42 @@ impl<D> DebugScope<D> {
 
 impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
     pub fn set_debug_loc(&self, bx: &mut Bx, source_info: mir::SourceInfo) {
-        let (scope, span) = self.debug_loc(source_info);
-        bx.set_span(span);
+        let (scope, span_source) = self.debug_loc(source_info);
+        bx.set_span(span_source.to_span(self.cx.tcx()));
         if let Some(scope) = scope {
-            bx.set_source_location(scope, span);
+            bx.set_source_location(scope, span_source);
         }
     }
 
-    pub fn debug_loc(&self, source_info: mir::SourceInfo) -> (Option<Bx::DIScope>, Span) {
+    pub fn debug_loc(&self, source_info: mir::SourceInfo) -> (Option<Bx::DIScope>, SpanSource) {
         // Bail out if debug info emission is not enabled.
         match self.debug_context {
-            None => return (None, source_info.span),
+            None => return (None, source_info.span_source),
             Some(_) => {}
         }
 
         // In order to have a good line stepping behavior in debugger, we overwrite debug
         // locations of macro expansions with that of the outermost expansion site
         // (unless the crate is being compiled with `-Z debug-macros`).
-        if !source_info.span.from_expansion() || self.cx.sess().opts.debugging_opts.debug_macros {
-            let scope = self.scope_metadata_for_loc(source_info.scope, source_info.span.lo());
-            (scope, source_info.span)
+        if !source_info.span_source.to_span(self.cx.tcx()).from_expansion()
+            || self.cx.sess().opts.debugging_opts.debug_macros
+        {
+            let scope = self.scope_metadata_for_loc(
+                source_info.scope,
+                source_info.span_source.to_span(self.cx.tcx()).lo(),
+            );
+            (scope, source_info.span_source)
         } else {
             // Walk up the macro expansion chain until we reach a non-expanded span.
             // We also stop at the function body level because no line stepping can occur
             // at the level above that.
-            let span = rustc_span::hygiene::walk_chain(source_info.span, self.mir.span.ctxt());
+            let span = rustc_span::hygiene::walk_chain(
+                source_info.span_source.to_span(self.cx.tcx()),
+                self.mir.span.ctxt(),
+            );
             let scope = self.scope_metadata_for_loc(source_info.scope, span.lo());
             // Use span of the outermost expansion site, while keeping the original lexical scope.
-            (scope, span)
+            (scope, SpanSource::Span(span))
         }
     }
 
@@ -149,10 +159,10 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             } else {
                 let name = kw::Invalid;
                 let decl = &self.mir.local_decls[local];
-                let (scope, span) = if full_debug_info {
+                let (scope, span_source) = if full_debug_info {
                     self.debug_loc(decl.source_info)
                 } else {
-                    (None, decl.source_info.span)
+                    (None, decl.source_info.span_source)
                 };
                 let dbg_var = scope.map(|scope| {
                     // FIXME(eddyb) is this `+ 1` needed at all?
@@ -164,7 +174,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                         self.monomorphize(&decl.ty),
                         scope,
                         kind,
-                        span,
+                        span_source,
                     )
                 });
 
@@ -261,7 +271,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                                 .ty
                                 .builtin_deref(true)
                                 .unwrap_or_else(|| {
-                                    span_bug!(var.source_info.span, "cannot deref `{}`", layout.ty)
+                                    span_bug!(
+                                        var.source_info.span_source.to_span(bx.tcx()),
+                                        "cannot deref `{}`",
+                                        layout.ty
+                                    )
                                 })
                                 .ty,
                         );
@@ -276,14 +290,14 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                         layout = layout.for_variant(bx.cx(), variant);
                     }
                     _ => span_bug!(
-                        var.source_info.span,
+                        var.source_info.span_source.to_span(bx.tcx()),
                         "unsupported var debuginfo place `{:?}`",
                         mir::Place { local, projection: var.projection },
                     ),
                 }
             }
 
-            let (scope, span) = self.debug_loc(var.source_info);
+            let (scope, span_source) = self.debug_loc(var.source_info);
             if let Some(scope) = scope {
                 if let Some(dbg_var) = var.dbg_var {
                     bx.dbg_var_addr(
@@ -292,7 +306,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                         base.llval,
                         direct_offset,
                         &indirect_offsets,
-                        span,
+                        span_source,
                     );
                 }
             }
@@ -319,10 +333,10 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 
         let mut per_local = IndexVec::from_elem(vec![], &self.mir.local_decls);
         for var in &self.mir.var_debug_info {
-            let (scope, span) = if full_debug_info {
+            let (scope, span_source) = if full_debug_info {
                 self.debug_loc(var.source_info)
             } else {
-                (None, var.source_info.span)
+                (None, var.source_info.span_source)
             };
             let dbg_var = scope.map(|scope| {
                 let place = var.place;
@@ -346,7 +360,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     var_ty,
                     scope,
                     var_kind,
-                    span,
+                    span_source,
                 )
             });
 

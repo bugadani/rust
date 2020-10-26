@@ -195,7 +195,7 @@ use rustc_middle::ty::adjustment::{CustomCoerceUnsized, PointerCast};
 use rustc_middle::ty::subst::{GenericArgKind, InternalSubsts};
 use rustc_middle::ty::{self, GenericParamDefKind, Instance, Ty, TyCtxt, TypeFoldable};
 use rustc_session::config::EntryFnType;
-use rustc_span::source_map::{dummy_spanned, respan, Span, Spanned, DUMMY_SP};
+use rustc_span::source_map::{dummy_spanned, respan, Span, Spanned};
 use smallvec::SmallVec;
 use std::iter;
 use std::ops::Range;
@@ -362,7 +362,7 @@ fn collect_items_rec<'tcx>(
             debug_assert!(should_codegen_locally(tcx, &instance));
 
             let ty = instance.ty(tcx, ty::ParamEnv::reveal_all());
-            visit_drop_use(tcx, ty, true, starting_point.span, &mut neighbors);
+            visit_drop_use(tcx, ty, true, SpanSource::Span(starting_point.span), &mut neighbors);
 
             recursion_depth_reset = None;
 
@@ -556,7 +556,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
     fn visit_rvalue(&mut self, rvalue: &mir::Rvalue<'tcx>, location: Location) {
         debug!("visiting rvalue {:?}", *rvalue);
 
-        let span = self.body.source_info(location).span;
+        let span_source = self.body.source_info(location).span_source;
 
         match *rvalue {
             // When doing an cast from a regular pointer to a fat pointer, we
@@ -580,7 +580,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                         self.tcx,
                         target_ty,
                         source_ty,
-                        span,
+                        span_source,
                         self.output,
                     );
                 }
@@ -592,7 +592,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
             ) => {
                 let fn_ty = operand.ty(self.body, self.tcx);
                 let fn_ty = self.monomorphize(fn_ty);
-                visit_fn_use(self.tcx, fn_ty, false, span, &mut self.output);
+                visit_fn_use(self.tcx, fn_ty, false, span_source, &mut self.output);
             }
             mir::Rvalue::Cast(
                 mir::CastKind::Pointer(PointerCast::ClosureFnPointer(_)),
@@ -610,7 +610,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                             ty::ClosureKind::FnOnce,
                         );
                         if should_codegen_locally(self.tcx, &instance) {
-                            self.output.push(create_fn_mono_item(self.tcx, instance, span));
+                            self.output.push(create_fn_mono_item(self.tcx, instance, span_source));
                         }
                     }
                     _ => bug!(),
@@ -622,7 +622,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                     tcx.require_lang_item(LangItem::ExchangeMalloc, None);
                 let instance = Instance::mono(tcx, exchange_malloc_fn_def_id);
                 if should_codegen_locally(tcx, &instance) {
-                    self.output.push(create_fn_mono_item(self.tcx, instance, span));
+                    self.output.push(create_fn_mono_item(self.tcx, instance, span_source));
                 }
             }
             mir::Rvalue::ThreadLocalRef(def_id) => {
@@ -630,7 +630,8 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                 let instance = Instance::mono(self.tcx, def_id);
                 if should_codegen_locally(self.tcx, &instance) {
                     trace!("collecting thread-local static {:?}", def_id);
-                    self.output.push(respan(span, MonoItem::Static(def_id)));
+                    self.output
+                        .push(respan(span_source.to_span(self.tcx), MonoItem::Static(def_id)));
                 }
             }
             _ => { /* not interesting */ }
@@ -652,7 +653,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                     Ok(val) => collect_const_value(self.tcx, val, self.output),
                     Err(ErrorHandled::Reported(ErrorReported) | ErrorHandled::Linted) => {}
                     Err(ErrorHandled::TooGeneric) => span_bug!(
-                        self.body.source_info(location).span,
+                        self.body.source_info(location).span_source.to_span(self.tcx),
                         "collection encountered polymorphic constant: {}",
                         substituted_constant
                     ),
@@ -666,7 +667,7 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'tcx>, location: Location) {
         debug!("visiting terminator {:?} @ {:?}", terminator, location);
-        let source = self.body.source_info(location).span;
+        let source = self.body.source_info(location).span_source;
 
         let tcx = self.tcx;
         match terminator.kind {
@@ -692,7 +693,10 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirNeighborCollector<'a, 'tcx> {
                             let instance = Instance::mono(self.tcx, def_id);
                             if should_codegen_locally(self.tcx, &instance) {
                                 trace!("collecting asm sym static {:?}", def_id);
-                                self.output.push(respan(source, MonoItem::Static(def_id)));
+                                self.output.push(respan(
+                                    source.to_span(self.tcx),
+                                    MonoItem::Static(def_id),
+                                ));
                             }
                         }
                         _ => {}
@@ -728,7 +732,7 @@ fn visit_drop_use<'tcx>(
     tcx: TyCtxt<'tcx>,
     ty: Ty<'tcx>,
     is_direct_call: bool,
-    source: Span,
+    source: SpanSource,
     output: &mut Vec<Spanned<MonoItem<'tcx>>>,
 ) {
     let instance = Instance::resolve_drop_in_place(tcx, ty);
@@ -739,7 +743,7 @@ fn visit_fn_use<'tcx>(
     tcx: TyCtxt<'tcx>,
     ty: Ty<'tcx>,
     is_direct_call: bool,
-    source: Span,
+    source: SpanSource,
     output: &mut Vec<Spanned<MonoItem<'tcx>>>,
 ) {
     if let ty::FnDef(def_id, substs) = *ty.kind() {
@@ -757,7 +761,7 @@ fn visit_instance_use<'tcx>(
     tcx: TyCtxt<'tcx>,
     instance: ty::Instance<'tcx>,
     is_direct_call: bool,
-    source: Span,
+    source: SpanSource,
     output: &mut Vec<Spanned<MonoItem<'tcx>>>,
 ) {
     debug!("visit_item_use({:?}, is_direct_call={:?})", instance, is_direct_call);
@@ -931,10 +935,10 @@ fn find_vtable_types_for_unsizing<'tcx>(
 fn create_fn_mono_item<'tcx>(
     tcx: TyCtxt<'tcx>,
     instance: Instance<'tcx>,
-    source: Span,
+    source: SpanSource,
 ) -> Spanned<MonoItem<'tcx>> {
     debug!("create_fn_mono_item(instance={})", instance);
-    respan(source, MonoItem::Fn(instance.polymorphize(tcx)))
+    respan(source.to_span(tcx), MonoItem::Fn(instance.polymorphize(tcx)))
 }
 
 /// Creates a `MonoItem` for each method that is referenced by the vtable for
@@ -943,7 +947,7 @@ fn create_mono_items_for_vtable_methods<'tcx>(
     tcx: TyCtxt<'tcx>,
     trait_ty: Ty<'tcx>,
     impl_ty: Ty<'tcx>,
-    source: Span,
+    source: SpanSource,
     output: &mut Vec<Spanned<MonoItem<'tcx>>>,
 ) {
     assert!(!trait_ty.has_escaping_bound_vars() && !impl_ty.has_escaping_bound_vars());
@@ -1022,7 +1026,7 @@ impl ItemLikeVisitor<'v> for RootCollector<'_, 'v> {
 
                         let ty = Instance::new(def_id.to_def_id(), InternalSubsts::empty())
                             .ty(self.tcx, ty::ParamEnv::reveal_all());
-                        visit_drop_use(self.tcx, ty, true, DUMMY_SP, self.output);
+                        visit_drop_use(self.tcx, ty, true, SpanSource::DUMMY, self.output);
                     }
                 }
             }
@@ -1093,7 +1097,7 @@ impl RootCollector<'_, 'v> {
             debug!("RootCollector::push_if_root: found root def_id={:?}", def_id);
 
             let instance = Instance::mono(self.tcx, def_id.to_def_id());
-            self.output.push(create_fn_mono_item(self.tcx, instance, DUMMY_SP));
+            self.output.push(create_fn_mono_item(self.tcx, instance, SpanSource::DUMMY));
         }
     }
 
@@ -1130,7 +1134,7 @@ impl RootCollector<'_, 'v> {
         .unwrap()
         .unwrap();
 
-        self.output.push(create_fn_mono_item(self.tcx, start_instance, DUMMY_SP));
+        self.output.push(create_fn_mono_item(self.tcx, start_instance, SpanSource::DUMMY));
     }
 }
 
@@ -1187,7 +1191,7 @@ fn create_mono_items_for_default_impls<'tcx>(
                         .unwrap()
                         .unwrap();
 
-                    let mono_item = create_fn_mono_item(tcx, instance, DUMMY_SP);
+                    let mono_item = create_fn_mono_item(tcx, instance, SpanSource::DUMMY);
                     if mono_item.node.is_instantiable(tcx) && should_codegen_locally(tcx, &instance)
                     {
                         output.push(mono_item);
@@ -1225,7 +1229,7 @@ fn collect_miri<'tcx>(
         GlobalAlloc::Function(fn_instance) => {
             if should_codegen_locally(tcx, &fn_instance) {
                 trace!("collecting {:?} with {:#?}", alloc_id, fn_instance);
-                output.push(create_fn_mono_item(tcx, fn_instance, DUMMY_SP));
+                output.push(create_fn_mono_item(tcx, fn_instance, SpanSource::DUMMY));
             }
         }
     }

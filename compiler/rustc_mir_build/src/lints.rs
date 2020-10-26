@@ -141,7 +141,8 @@ impl<'mir, 'tcx> TriColorVisitor<&'mir Body<'tcx>> for Search<'mir, 'tcx> {
         let terminator = self.body[bb].terminator();
         if let TerminatorKind::Call { func, .. } = &terminator.kind {
             if self.is_recursive_call(func) {
-                self.reachable_recursive_calls.push(terminator.source_info.span);
+                self.reachable_recursive_calls
+                    .push(terminator.source_info.span_source.to_span(self.tcx));
             }
         }
 

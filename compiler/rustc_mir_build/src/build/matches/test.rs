@@ -12,6 +12,7 @@ use crate::thir::*;
 use rustc_data_structures::fx::FxIndexMap;
 use rustc_hir::{LangItem, RangeEnd};
 use rustc_index::bit_set::BitSet;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::util::IntTypeExt;
 use rustc_middle::ty::{self, adjustment::PointerCast, Ty};
@@ -161,7 +162,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             test
         );
 
-        let source_info = self.source_info(test.span);
+        let source_info = self.source_info(SpanSource::Span(test.span));
         match test.kind {
             TestKind::Switch { adt_def, ref variants } => {
                 let target_blocks = make_target_blocks(self);
@@ -194,7 +195,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 );
                 debug!("num_enum_variants: {}, variants: {:?}", num_enum_variants, variants);
                 let discr_ty = adt_def.repr.discr_type().to_ty(tcx);
-                let discr = self.temp(discr_ty, test.span);
+                let discr = self.temp(discr_ty, SpanSource::Span(test.span));
                 self.cfg.push_assign(block, source_info, discr, Rvalue::Discriminant(place));
                 self.cfg.terminate(
                     block,
@@ -253,7 +254,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 } else {
                     if let [success, fail] = *make_target_blocks(self) {
                         assert_eq!(value.ty, ty);
-                        let expect = self.literal_operand(test.span, value);
+                        let expect = self.literal_operand(SpanSource::Span(test.span), value);
                         let val = Operand::Copy(place);
                         self.compare(block, success, fail, source_info, BinOp::Eq, expect, val);
                     } else {
@@ -267,8 +268,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let target_blocks = make_target_blocks(self);
 
                 // Test `val` by computing `lo <= val && val <= hi`, using primitive comparisons.
-                let lo = self.literal_operand(test.span, lo);
-                let hi = self.literal_operand(test.span, hi);
+                let lo = self.literal_operand(SpanSource::Span(test.span), lo);
+                let hi = self.literal_operand(SpanSource::Span(test.span), hi);
                 let val = Operand::Copy(place);
 
                 if let [success, fail] = *target_blocks {
@@ -295,7 +296,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 let target_blocks = make_target_blocks(self);
 
                 let usize_ty = self.hir.usize_ty();
-                let actual = self.temp(usize_ty, test.span);
+                let actual = self.temp(usize_ty, SpanSource::Span(test.span));
 
                 // actual = len(place)
                 self.cfg.push_assign(block, source_info, actual, Rvalue::Len(place));
@@ -334,7 +335,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         right: Operand<'tcx>,
     ) {
         let bool_ty = self.hir.bool_ty();
-        let result = self.temp(bool_ty, source_info.span);
+        let result = self.temp(bool_ty, source_info.span_source);
 
         // result = op(left, right)
         self.cfg.push_assign(block, source_info, result, Rvalue::BinaryOp(op, left, right));
@@ -357,7 +358,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         place: Place<'tcx>,
         mut ty: Ty<'tcx>,
     ) {
-        let mut expect = self.literal_operand(source_info.span, value);
+        let mut expect = self.literal_operand(source_info.span_source, value);
         let mut val = Operand::Copy(place);
 
         // If we're using `b"..."` as a pattern, we need to insert an
@@ -383,7 +384,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 // make both a slice
                 ty = tcx.mk_imm_ref(region, tcx.mk_slice(elem_ty));
                 if opt_ref_ty.is_some() {
-                    let temp = self.temp(ty, source_info.span);
+                    let temp = self.temp(ty, source_info.span_source);
                     self.cfg.push_assign(
                         block,
                         source_info,
@@ -393,7 +394,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     val = Operand::Move(temp);
                 }
                 if opt_ref_test_ty.is_some() {
-                    let slice = self.temp(ty, source_info.span);
+                    let slice = self.temp(ty, source_info.span_source);
                     self.cfg.push_assign(
                         block,
                         source_info,
@@ -414,14 +415,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let method = self.hir.trait_method(eq_def_id, sym::eq, deref_ty, &[deref_ty.into()]);
 
         let bool_ty = self.hir.bool_ty();
-        let eq_result = self.temp(bool_ty, source_info.span);
+        let eq_result = self.temp(bool_ty, source_info.span_source);
         let eq_block = self.cfg.start_new_block();
         self.cfg.terminate(
             block,
             source_info,
             TerminatorKind::Call {
                 func: Operand::Constant(box Constant {
-                    span: source_info.span,
+                    span: source_info.span_source.to_span(self.hir.tcx()),
 
                     // FIXME(#54571): This constant comes from user input (a
                     // constant in a pattern).  Are there forms where users can add
@@ -435,7 +436,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 destination: Some((eq_result, eq_block)),
                 cleanup: None,
                 from_hir_call: false,
-                fn_span: source_info.span,
+                fn_span: source_info.span_source.to_span(self.hir.tcx()),
             },
         );
         self.diverge_from(block);

@@ -1,7 +1,7 @@
 use rustc_index::vec::{Idx, IndexVec};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::*;
 use rustc_middle::ty::Ty;
-use rustc_span::Span;
 
 /// This struct represents a patch to MIR, which can add
 /// new statements and basic blocks and patch over block
@@ -50,7 +50,7 @@ impl<'tcx> MirPatch<'tcx> {
             result.new_block(BasicBlockData {
                 statements: vec![],
                 terminator: Some(Terminator {
-                    source_info: SourceInfo::outermost(body.span),
+                    source_info: SourceInfo::outermost(SpanSource::Span(body.span)),
                     kind: TerminatorKind::Resume,
                 }),
                 is_cleanup: true,
@@ -80,17 +80,17 @@ impl<'tcx> MirPatch<'tcx> {
         Location { block: bb, statement_index: offset }
     }
 
-    pub fn new_temp(&mut self, ty: Ty<'tcx>, span: Span) -> Local {
+    pub fn new_temp(&mut self, ty: Ty<'tcx>, span_source: SpanSource) -> Local {
         let index = self.next_local;
         self.next_local += 1;
-        self.new_locals.push(LocalDecl::new(ty, span));
+        self.new_locals.push(LocalDecl::new(ty, span_source));
         Local::new(index as usize)
     }
 
-    pub fn new_internal(&mut self, ty: Ty<'tcx>, span: Span) -> Local {
+    pub fn new_internal(&mut self, ty: Ty<'tcx>, span_source: SpanSource) -> Local {
         let index = self.next_local;
         self.next_local += 1;
-        self.new_locals.push(LocalDecl::new(ty, span).internal());
+        self.new_locals.push(LocalDecl::new(ty, span_source).internal());
         Local::new(index as usize)
     }
 

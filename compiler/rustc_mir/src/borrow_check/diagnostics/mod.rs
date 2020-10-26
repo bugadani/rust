@@ -6,6 +6,7 @@ use rustc_hir::def::Namespace;
 use rustc_hir::def_id::DefId;
 use rustc_hir::lang_items::LangItemGroup;
 use rustc_hir::GeneratorKind;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::{
     AggregateKind, Constant, Field, Local, LocalInfo, LocalKind, Location, Operand, Place,
     PlaceRef, ProjectionElem, Rvalue, Statement, StatementKind, Terminator, TerminatorKind,
@@ -772,7 +773,11 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
 
         let stmt = match self.body[location.block].statements.get(location.statement_index) {
             Some(stmt) => stmt,
-            None => return OtherUse(self.body.source_info(location).span),
+            None => {
+                return OtherUse(
+                    self.body.source_info(location).span_source.to_span(self.infcx.tcx),
+                );
+            }
         };
 
         debug!("move_spans: moved_place={:?} location={:?} stmt={:?}", moved_place, location, stmt);
@@ -793,9 +798,9 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
 
         let normal_ret =
             if moved_place.projection.iter().any(|p| matches!(p, ProjectionElem::Downcast(..))) {
-                PatUse(stmt.source_info.span)
+                PatUse(stmt.source_info.span_source.to_span(self.infcx.tcx))
             } else {
-                OtherUse(stmt.source_info.span)
+                OtherUse(stmt.source_info.span_source.to_span(self.infcx.tcx))
             };
 
         // We are trying to find MIR of the form:
@@ -882,7 +887,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
             });
 
             return FnSelfUse {
-                var_span: stmt.source_info.span,
+                var_span: stmt.source_info.span_source.to_span(self.infcx.tcx),
                 fn_call_span,
                 fn_span: self
                     .infcx
@@ -900,8 +905,9 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     /// and its usage of the local assigned at `location`.
     /// This is done by searching in statements succeeding `location`
     /// and originating from `maybe_closure_span`.
-    pub(super) fn borrow_spans(&self, use_span: Span, location: Location) -> UseSpans<'tcx> {
+    pub(super) fn borrow_spans(&self, use_span: SpanSource, location: Location) -> UseSpans<'tcx> {
         use self::UseSpans::*;
+        let use_span = use_span.to_span(self.infcx.tcx);
         debug!("borrow_spans: use_span={:?} location={:?}", use_span, location);
 
         let target = match self.body[location.block].statements.get(location.statement_index) {
@@ -943,7 +949,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                 }
             }
 
-            if use_span != stmt.source_info.span {
+            if use_span != stmt.source_info.span_source.to_span(self.infcx.tcx) {
                 break;
             }
         }
@@ -1005,7 +1011,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     /// Helper to retrieve span(s) of given borrow from the current MIR
     /// representation
     pub(super) fn retrieve_borrow_spans(&self, borrow: &BorrowData<'_>) -> UseSpans<'tcx> {
-        let span = self.body.source_info(borrow.reserve_location).span;
+        let span = self.body.source_info(borrow.reserve_location).span_source;
         self.borrow_spans(span, borrow.reserve_location)
     }
 }

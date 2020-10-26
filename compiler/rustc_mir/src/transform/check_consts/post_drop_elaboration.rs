@@ -1,7 +1,7 @@
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::visit::Visitor;
 use rustc_middle::mir::{self, BasicBlock, Location};
 use rustc_middle::ty::TyCtxt;
-use rustc_span::Span;
 
 use super::ops::{self, NonConstOp};
 use super::qualifs::{NeedsDrop, Qualif};
@@ -55,8 +55,10 @@ impl std::ops::Deref for CheckLiveDrops<'mir, 'tcx> {
 }
 
 impl CheckLiveDrops<'mir, 'tcx> {
-    fn check_live_drop(&self, span: Span) {
-        ops::LiveDrop { dropped_at: None }.build_error(self.ccx, span).emit();
+    fn check_live_drop(&self, span_source: SpanSource) {
+        ops::LiveDrop { dropped_at: None }
+            .build_error(self.ccx, span_source.to_span(self.tcx))
+            .emit();
     }
 }
 
@@ -83,19 +85,20 @@ impl Visitor<'tcx> for CheckLiveDrops<'mir, 'tcx> {
                 }
 
                 if dropped_place.is_indirect() {
-                    self.check_live_drop(terminator.source_info.span);
+                    self.check_live_drop(terminator.source_info.span_source);
                     return;
                 }
 
                 if self.qualifs.needs_drop(self.ccx, dropped_place.local, location) {
                     // Use the span where the dropped local was declared for the error.
-                    let span = self.body.local_decls[dropped_place.local].source_info.span;
-                    self.check_live_drop(span);
+                    let span_source =
+                        self.body.local_decls[dropped_place.local].source_info.span_source;
+                    self.check_live_drop(span_source);
                 }
             }
 
             mir::TerminatorKind::DropAndReplace { .. } => span_bug!(
-                terminator.source_info.span,
+                terminator.source_info.span_source.to_span(self.tcx),
                 "`DropAndReplace` should be removed by drop elaboration",
             ),
 

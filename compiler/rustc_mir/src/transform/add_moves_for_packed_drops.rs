@@ -66,7 +66,10 @@ fn add_moves_for_packed_drops_patch<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>) 
                 add_move_for_packed_drop(tcx, body, &mut patch, terminator, loc, data.is_cleanup);
             }
             TerminatorKind::DropAndReplace { .. } => {
-                span_bug!(terminator.source_info.span, "replace in AddMovesForPackedDrops");
+                span_bug!(
+                    terminator.source_info.span_source.to_span(tcx),
+                    "replace in AddMovesForPackedDrops"
+                );
             }
             _ => {}
         }
@@ -91,7 +94,7 @@ fn add_move_for_packed_drop<'tcx>(
 
     let source_info = terminator.source_info;
     let ty = place.ty(body, tcx).ty;
-    let temp = patch.new_temp(ty, terminator.source_info.span);
+    let temp = patch.new_temp(ty, terminator.source_info.span_source);
 
     let storage_dead_block = patch.new_block(BasicBlockData {
         statements: vec![Statement { source_info, kind: StatementKind::StorageDead(temp) }],

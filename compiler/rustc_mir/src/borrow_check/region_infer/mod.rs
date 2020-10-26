@@ -10,6 +10,7 @@ use rustc_index::vec::IndexVec;
 use rustc_infer::infer::canonical::QueryOutlivesConstraint;
 use rustc_infer::infer::region_constraints::{GenericKind, VarInfos, VerifyBound};
 use rustc_infer::infer::{InferCtxt, NLLRegionVariableOrigin, RegionVariableOrigin};
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::{
     Body, ClosureOutlivesRequirement, ClosureOutlivesSubject, ClosureRegionRequirements,
     ConstraintCategory, Local, Location, ReturnConstraint,
@@ -569,13 +570,19 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         // constraints were too strong, and if so, emit or propagate those errors.
         if infcx.tcx.sess.opts.debugging_opts.polonius {
             self.check_polonius_subset_errors(
+                infcx.tcx,
                 body,
                 outlives_requirements.as_mut(),
                 &mut errors_buffer,
                 polonius_output.expect("Polonius output is unavailable despite `-Z polonius`"),
             );
         } else {
-            self.check_universal_regions(body, outlives_requirements.as_mut(), &mut errors_buffer);
+            self.check_universal_regions(
+                infcx.tcx,
+                body,
+                outlives_requirements.as_mut(),
+                &mut errors_buffer,
+            );
         }
 
         if errors_buffer.is_empty() {
@@ -975,7 +982,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                 let requirement = ClosureOutlivesRequirement {
                     subject,
                     outlived_free_region: upper_bound,
-                    blame_span: locations.span(body),
+                    blame_span: locations.span(body).to_span(tcx),
                     category: ConstraintCategory::Boring,
                 };
                 debug!("try_promote_type_test: pushing {:#?}", requirement);
@@ -1326,6 +1333,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// report them as errors.
     fn check_universal_regions(
         &self,
+        tcx: TyCtxt<'tcx>,
         body: &Body<'tcx>,
         mut propagated_outlives_requirements: Option<&mut Vec<ClosureOutlivesRequirement<'tcx>>>,
         errors_buffer: &mut RegionErrors<'tcx>,
@@ -1337,6 +1345,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                     // they did not grow too large, accumulating any requirements
                     // for our caller into the `outlives_requirements` vector.
                     self.check_universal_region(
+                        tcx,
                         body,
                         fr,
                         &mut propagated_outlives_requirements,
@@ -1379,6 +1388,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// report them as errors.
     fn check_polonius_subset_errors(
         &self,
+        tcx: TyCtxt<'tcx>,
         body: &Body<'tcx>,
         mut propagated_outlives_requirements: Option<&mut Vec<ClosureOutlivesRequirement<'tcx>>>,
         errors_buffer: &mut RegionErrors<'tcx>,
@@ -1424,6 +1434,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             );
 
             let propagated = self.try_propagate_universal_region_error(
+                tcx,
                 *longer_fr,
                 *shorter_fr,
                 body,
@@ -1469,6 +1480,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// `outlives_requirements` vector.
     fn check_universal_region(
         &self,
+        tcx: TyCtxt<'tcx>,
         body: &Body<'tcx>,
         longer_fr: RegionVid,
         propagated_outlives_requirements: &mut Option<&mut Vec<ClosureOutlivesRequirement<'tcx>>>,
@@ -1492,6 +1504,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         let representative = self.scc_representatives[longer_fr_scc];
         if representative != longer_fr {
             if let RegionRelationCheckResult::Error = self.check_universal_region_relation(
+                tcx,
                 longer_fr,
                 representative,
                 body,
@@ -1512,6 +1525,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         let mut error_reported = false;
         for shorter_fr in self.scc_values.universal_regions_outlived_by(longer_fr_scc) {
             if let RegionRelationCheckResult::Error = self.check_universal_region_relation(
+                tcx,
                 longer_fr,
                 shorter_fr,
                 body,
@@ -1537,6 +1551,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// error.
     fn check_universal_region_relation(
         &self,
+        tcx: TyCtxt<'tcx>,
         longer_fr: RegionVid,
         shorter_fr: RegionVid,
         body: &Body<'tcx>,
@@ -1553,6 +1568,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
             // Note: in this case, we use the unapproximated regions to report the
             // error. This gives better error messages in some cases.
             self.try_propagate_universal_region_error(
+                tcx,
                 longer_fr,
                 shorter_fr,
                 body,
@@ -1565,6 +1581,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
     /// creator. If we cannot, then the caller should report an error to the user.
     fn try_propagate_universal_region_error(
         &self,
+        tcx: TyCtxt<'tcx>,
         longer_fr: RegionVid,
         shorter_fr: RegionVid,
         body: &Body<'tcx>,
@@ -1599,7 +1616,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
                     propagated_outlives_requirements.push(ClosureOutlivesRequirement {
                         subject: ClosureOutlivesSubject::Region(fr_minus),
                         outlived_free_region: fr,
-                        blame_span: blame_span_category.1,
+                        blame_span: blame_span_category.1.to_span(tcx),
                         category: blame_span_category.0,
                     });
                 }
@@ -1735,19 +1752,17 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         &self,
         body: &Body<'tcx>,
         constraint: &OutlivesConstraint,
-    ) -> (ConstraintCategory, bool, Span) {
+    ) -> (ConstraintCategory, bool, SpanSource) {
         let loc = match constraint.locations {
-            Locations::All(span) => return (constraint.category, false, span),
+            Locations::All(span) => return (constraint.category, false, SpanSource::Span(span)),
             Locations::Single(loc) => loc,
         };
 
         let opt_span_category =
             self.closure_bounds_mapping[&loc].get(&(constraint.sup, constraint.sub));
-        opt_span_category.map(|&(category, span)| (category, true, span)).unwrap_or((
-            constraint.category,
-            false,
-            body.source_info(loc).span,
-        ))
+        opt_span_category
+            .map(|&(category, span)| (category, true, SpanSource::Span(span)))
+            .unwrap_or((constraint.category, false, body.source_info(loc).span_source))
     }
 
     /// Finds a good span to blame for the fact that `fr1` outlives `fr2`.
@@ -1757,11 +1772,11 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         fr1: RegionVid,
         fr1_origin: NLLRegionVariableOrigin,
         fr2: RegionVid,
-    ) -> (ConstraintCategory, Span) {
-        let (category, _, span) = self.best_blame_constraint(body, fr1, fr1_origin, |r| {
+    ) -> (ConstraintCategory, SpanSource) {
+        let (category, _, span_source) = self.best_blame_constraint(body, fr1, fr1_origin, |r| {
             self.provides_universal_region(r, fr1, fr2)
         });
-        (category, span)
+        (category, span_source)
     }
 
     /// Walks the graph of constraints (where `'a: 'b` is considered
@@ -1951,7 +1966,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         from_region: RegionVid,
         from_region_origin: NLLRegionVariableOrigin,
         target_test: impl Fn(RegionVid) -> bool,
-    ) -> (ConstraintCategory, bool, Span) {
+    ) -> (ConstraintCategory, bool, SpanSource) {
         debug!(
             "best_blame_constraint(from_region={:?}, from_region_origin={:?})",
             from_region, from_region_origin
@@ -1973,7 +1988,7 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         );
 
         // Classify each of the constraints along the path.
-        let mut categorized_path: Vec<(ConstraintCategory, bool, Span)> = path
+        let mut categorized_path: Vec<(ConstraintCategory, bool, SpanSource)> = path
             .iter()
             .map(|constraint| {
                 if constraint.category == ConstraintCategory::ClosureBounds {

@@ -4,11 +4,11 @@ use crate::build::expr::category::Category;
 use crate::build::ForGuard::{OutsideGuard, RefWithinGuard};
 use crate::build::{BlockAnd, BlockAndExtension, Builder};
 use crate::thir::*;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::region;
 use rustc_middle::mir::AssertKind::BoundsCheck;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty, TyCtxt, Variance};
-use rustc_span::Span;
 
 use rustc_index::vec::Idx;
 
@@ -129,7 +129,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         debug!("expr_as_place(block={:?}, expr={:?}, mutability={:?})", block, expr, mutability);
 
         let this = self;
-        let expr_span = expr.span;
+        let expr_span = SpanSource::Span(expr.span);
         let source_info = this.source_info(expr_span);
         match expr.kind {
             ExprKind::Scope { region_scope, lint_level, value } => {
@@ -180,7 +180,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 if let Some(user_ty) = user_ty {
                     let annotation_index =
                         this.canonical_user_type_annotations.push(CanonicalUserTypeAnnotation {
-                            span: source_info.span,
+                            span: source_info.span_source.to_span(this.hir.tcx()),
                             user_ty,
                             inferred_ty: expr.ty,
                         });
@@ -209,7 +209,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 if let Some(user_ty) = user_ty {
                     let annotation_index =
                         this.canonical_user_type_annotations.push(CanonicalUserTypeAnnotation {
-                            span: source_info.span,
+                            span: source_info.span_source.to_span(this.hir.tcx()),
                             user_ty,
                             inferred_ty: expr.ty,
                         });
@@ -289,7 +289,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         mutability: Mutability,
         fake_borrow_temps: Option<&mut Vec<Local>>,
         temp_lifetime: Option<region::Scope>,
-        expr_span: Span,
+        expr_span: SpanSource,
         source_info: SourceInfo,
     ) -> BlockAnd<PlaceBuilder<'tcx>> {
         let lhs = self.hir.mirror(base);
@@ -334,7 +334,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         block: BasicBlock,
         slice: Place<'tcx>,
         index: Local,
-        expr_span: Span,
+        expr_span: SpanSource,
         source_info: SourceInfo,
     ) -> BasicBlock {
         let usize_ty = self.hir.usize_ty();
@@ -362,7 +362,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         base_place: &PlaceBuilder<'tcx>,
         block: BasicBlock,
         fake_borrow_temps: &mut Vec<Local>,
-        expr_span: Span,
+        expr_span: SpanSource,
         source_info: SourceInfo,
     ) {
         let tcx = self.hir.tcx();

@@ -1,9 +1,10 @@
 use std::convert::TryFrom;
 
 use rustc_hir::lang_items::LangItem;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::mir::TerminatorKind;
 use rustc_middle::ty::subst::Subst;
-use rustc_span::{Span, Symbol};
+use rustc_span::Symbol;
 use rustc_target::abi::LayoutOf;
 
 use crate::interpret::{
@@ -14,7 +15,7 @@ use crate::interpret::{
 impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     /// Walks up the callstack from the intrinsic's callsite, searching for the first callsite in a
     /// frame which is not `#[track_caller]`.
-    crate fn find_closest_untracked_caller_location(&self) -> Span {
+    crate fn find_closest_untracked_caller_location(&self) -> SpanSource {
         let frame = self
             .stack()
             .iter()
@@ -41,12 +42,12 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                 block.terminator().kind
             );
             if let TerminatorKind::Call { fn_span, .. } = block.terminator().kind {
-                return fn_span;
+                return SpanSource::Span(fn_span);
             }
         }
         // This is a different terminator (such as `Drop`) or not a terminator at all
         // (such as `box`). Use the normal span.
-        frame.body.source_info(loc).span
+        frame.body.source_info(loc).span_source
     }
 
     /// Allocate a `const core::panic::Location` with the provided filename and line/column numbers.
@@ -79,8 +80,13 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         location
     }
 
-    crate fn location_triple_for_span(&self, span: Span) -> (Symbol, u32, u32) {
-        let topmost = span.ctxt().outer_expn().expansion_cause().unwrap_or(span);
+    crate fn location_triple_for_span(&self, span: SpanSource) -> (Symbol, u32, u32) {
+        let topmost = span
+            .to_span(self.tcx.tcx)
+            .ctxt()
+            .outer_expn()
+            .expansion_cause()
+            .unwrap_or(span.to_span(self.tcx.tcx));
         let caller = self.tcx.sess.source_map().lookup_char_pos(topmost.lo());
         (
             Symbol::intern(&caller.file.name.to_string()),
@@ -89,7 +95,10 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         )
     }
 
-    pub fn alloc_caller_location_for_span(&mut self, span: Span) -> MPlaceTy<'tcx, M::PointerTag> {
+    pub fn alloc_caller_location_for_span(
+        &mut self,
+        span: SpanSource,
+    ) -> MPlaceTy<'tcx, M::PointerTag> {
         let (file, line, column) = self.location_triple_for_span(span);
         self.alloc_caller_location(file, line, column)
     }

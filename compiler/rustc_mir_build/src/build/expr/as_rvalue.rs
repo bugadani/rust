@@ -5,11 +5,11 @@ use rustc_index::vec::Idx;
 use crate::build::expr::category::{Category, RvalueFunc};
 use crate::build::{BlockAnd, BlockAndExtension, Builder};
 use crate::thir::*;
+use rustc_middle::middle::lang_items::SpanSource;
 use rustc_middle::middle::region;
 use rustc_middle::mir::AssertKind;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, Ty, UpvarSubsts};
-use rustc_span::Span;
 
 impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// Returns an rvalue suitable for use until the end of the current
@@ -49,7 +49,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         debug!("expr_as_rvalue(block={:?}, scope={:?}, expr={:?})", block, scope, expr);
 
         let this = self;
-        let expr_span = expr.span;
+        let expr_span = SpanSource::Span(expr.span);
         let source_info = this.source_info(expr_span);
 
         match expr.kind {
@@ -204,7 +204,11 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                         arg,
                                     } => unpack!(
                                         block = this.limit_capture_mutability(
-                                            upvar.span, upvar.ty, scope, block, arg,
+                                            SpanSource::Span(upvar.span),
+                                            upvar.ty,
+                                            scope,
+                                            block,
+                                            arg,
                                         )
                                     ),
                                     _ => unpack!(block = this.as_operand(block, scope, upvar)),
@@ -227,7 +231,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             ExprKind::Assign { .. } | ExprKind::AssignOp { .. } => {
                 block = unpack!(this.stmt_expr(block, expr, None));
                 block.and(Rvalue::Use(Operand::Constant(box Constant {
-                    span: expr_span,
+                    span: expr_span.to_span(this.hir.tcx()),
                     user_ty: None,
                     literal: ty::Const::zero_sized(this.hir.tcx(), this.hir.tcx().types.unit),
                 })))
@@ -274,7 +278,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         &mut self,
         mut block: BasicBlock,
         op: BinOp,
-        span: Span,
+        span: SpanSource,
         ty: Ty<'tcx>,
         lhs: Operand<'tcx>,
         rhs: Operand<'tcx>,
@@ -371,7 +375,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
     fn limit_capture_mutability(
         &mut self,
-        upvar_span: Span,
+        upvar_span: SpanSource,
         upvar_ty: Ty<'tcx>,
         temp_lifetime: Option<region::Scope>,
         mut block: BasicBlock,
@@ -447,23 +451,23 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     }
 
     // Helper to get a `-1` value of the appropriate type
-    fn neg_1_literal(&mut self, span: Span, ty: Ty<'tcx>) -> Operand<'tcx> {
+    fn neg_1_literal(&mut self, span_source: SpanSource, ty: Ty<'tcx>) -> Operand<'tcx> {
         let param_ty = ty::ParamEnv::empty().and(ty);
         let bits = self.hir.tcx().layout_of(param_ty).unwrap().size.bits();
         let n = (!0u128) >> (128 - bits);
         let literal = ty::Const::from_bits(self.hir.tcx(), n, param_ty);
 
-        self.literal_operand(span, literal)
+        self.literal_operand(span_source, literal)
     }
 
     // Helper to get the minimum value of the appropriate type
-    fn minval_literal(&mut self, span: Span, ty: Ty<'tcx>) -> Operand<'tcx> {
+    fn minval_literal(&mut self, span_source: SpanSource, ty: Ty<'tcx>) -> Operand<'tcx> {
         assert!(ty.is_signed());
         let param_ty = ty::ParamEnv::empty().and(ty);
         let bits = self.hir.tcx().layout_of(param_ty).unwrap().size.bits();
         let n = 1 << (bits - 1);
         let literal = ty::Const::from_bits(self.hir.tcx(), n, param_ty);
 
-        self.literal_operand(span, literal)
+        self.literal_operand(span_source, literal)
     }
 }
