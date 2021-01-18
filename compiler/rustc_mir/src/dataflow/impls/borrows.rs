@@ -105,10 +105,11 @@ fn precompute_borrows_out_of_scope<'tcx>(
                                 hi: *lo - 1,
                                 first_part_only: true,
                             });
+
+                            // And update this entry with 0, to represent the
+                            // whole BB being processed.
+                            *lo = 0;
                         }
-                        // And update this entry with 0, to represent the
-                        // whole BB being processed.
-                        *lo = 0;
                     })
                     .or_insert_with(|| {
                         // succ_bb hasn't been seen before. Add it to
