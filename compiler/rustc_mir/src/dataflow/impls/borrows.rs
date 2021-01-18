@@ -2,7 +2,7 @@ use rustc_middle::mir::{self, Body, Location, Place};
 use rustc_middle::ty::RegionVid;
 use rustc_middle::ty::TyCtxt;
 
-use rustc_data_structures::fx::FxHashMap;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_index::bit_set::BitSet;
 
 use crate::borrow_check::{
@@ -62,8 +62,10 @@ fn precompute_borrows_out_of_scope<'tcx>(
     // `visited` once they are added to `stack`, before they are actually
     // processed, because this avoids the need to look them up again on
     // completion.
-    let mut visited = FxHashMap::default();
-    visited.insert(location.block, location.statement_index);
+    let mut visited = FxHashSet::default();
+    visited.insert(location.block);
+
+    let mut first_lo = location.statement_index;
 
     let mut stack = vec![];
     stack.push(StackEntry {
@@ -92,38 +94,32 @@ fn precompute_borrows_out_of_scope<'tcx>(
             let bb_data = &body[bb];
             assert!(hi == bb_data.statements.len());
             for &succ_bb in bb_data.terminator().successors() {
-                visited
-                    .entry(succ_bb)
-                    .and_modify(|lo| {
+                if visited.insert(succ_bb) == false {
+                    if succ_bb == location.block && first_lo > 0 {
                         // `succ_bb` has been seen before. If it wasn't
                         // fully processed, add its first part to `stack`
                         // for processing.
-                        if *lo > 0 {
-                            stack.push(StackEntry {
-                                bb: succ_bb,
-                                lo: 0,
-                                hi: *lo - 1,
-                                first_part_only: true,
-                            });
-
-                            // And update this entry with 0, to represent the
-                            // whole BB being processed.
-                            *lo = 0;
-                        }
-                    })
-                    .or_insert_with(|| {
-                        // succ_bb hasn't been seen before. Add it to
-                        // `stack` for processing.
                         stack.push(StackEntry {
                             bb: succ_bb,
                             lo: 0,
-                            hi: body[succ_bb].statements.len(),
-                            first_part_only: false,
+                            hi: first_lo - 1,
+                            first_part_only: true,
                         });
-                        // Insert 0 for this BB, to represent the whole BB
-                        // being processed.
-                        0
+
+                        // And update this entry with 0, to represent the
+                        // whole BB being processed.
+                        first_lo = 0;
+                    }
+                } else {
+                    // succ_bb hasn't been seen before. Add it to
+                    // `stack` for processing.
+                    stack.push(StackEntry {
+                        bb: succ_bb,
+                        lo: 0,
+                        hi: body[succ_bb].statements.len(),
+                        first_part_only: false,
                     });
+                }
             }
         }
     }
