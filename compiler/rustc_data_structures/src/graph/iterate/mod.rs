@@ -1,6 +1,5 @@
 use super::{DirectedGraph, WithNumNodes, WithStartNode, WithSuccessors};
 use rustc_index::bit_set::BitSet;
-use rustc_index::vec::IndexVec;
 use std::ops::ControlFlow;
 
 #[cfg(test)]
@@ -18,10 +17,10 @@ pub fn post_order_from_to<G: DirectedGraph + WithSuccessors + WithNumNodes>(
     start_node: G::Node,
     end_node: Option<G::Node>,
 ) -> Vec<G::Node> {
-    let mut visited: IndexVec<G::Node, bool> = IndexVec::from_elem_n(false, graph.num_nodes());
+    let mut visited = BitSet::new_empty(graph.num_nodes());
     let mut result: Vec<G::Node> = Vec::with_capacity(graph.num_nodes());
     if let Some(end_node) = end_node {
-        visited[end_node] = true;
+        visited.insert(end_node);
     }
     post_order_walk(graph, start_node, &mut result, &mut visited);
     result
@@ -31,14 +30,14 @@ fn post_order_walk<G: DirectedGraph + WithSuccessors + WithNumNodes>(
     graph: &G,
     node: G::Node,
     result: &mut Vec<G::Node>,
-    visited: &mut IndexVec<G::Node, bool>,
+    visited: &mut BitSet<G::Node>,
 ) {
     struct PostOrderFrame<Node, Iter> {
         node: Node,
         iter: Iter,
     }
 
-    if visited[node] {
+    if visited.contains(node) {
         return;
     }
 
@@ -46,10 +45,10 @@ fn post_order_walk<G: DirectedGraph + WithSuccessors + WithNumNodes>(
 
     'recurse: while let Some(frame) = stack.last_mut() {
         let node = frame.node;
-        visited[node] = true;
+        visited.insert(node);
 
         while let Some(successor) = frame.iter.next() {
-            if !visited[successor] {
+            if !visited.contains(successor) {
                 stack.push(PostOrderFrame { node: successor, iter: graph.successors(successor) });
                 continue 'recurse;
             }
